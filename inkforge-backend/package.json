@@ -1,0 +1,23 @@
+{
+  "name": "inkforge-backend",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply inkforge-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply inkforge-db --remote",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "drizzle-orm": "^0.41.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250505.0",
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.0.0"
+  }
+}

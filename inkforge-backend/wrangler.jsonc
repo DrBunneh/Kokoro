@@ -1,0 +1,39 @@
+{
+  "name": "inkforge-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "9addd3c1dbda3edafbac94515495395f",
+
+  // D1 database binding — create with: wrangler d1 create inkforge-db
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "inkforge-db",
+      // Replace this with the real ID after running: wrangler d1 create inkforge-db
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ],
+
+  // R2 bucket binding — create with: wrangler r2 bucket create inkforge-storage
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "inkforge-storage"
+    }
+  ],
+
+  // Cron triggers — placeholder for Phase 3 (market data capture)
+  "triggers": {
+    "crons": [
+      // "0 */2 * * *"  — every 2 hours (market data capture, Phase 3)
+    ]
+  },
+
+  "routes": [
+    {
+      "pattern": "backend-dash.inkforge.io/*",
+      "zone_name": "inkforge.io"
+    }
+  ]
+}
