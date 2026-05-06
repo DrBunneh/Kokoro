@@ -1,0 +1,29 @@
+{
+  "name": "inkforge-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "9addd3c1dbda3edafbac94515495395f",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "inkforge-db",
+      "database_id": "bf8534b3-6b30-436d-b73f-18912e8bf054"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "inkforge-storage"
+    }
+  ],
+
+  "routes": [
+    {
+      "pattern": "backend-dash.inkforge.io/*",
+      "zone_name": "inkforge.io"
+    }
+  ]
+}

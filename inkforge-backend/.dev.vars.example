@@ -1,0 +1,4 @@
+# Copy this file to .dev.vars for local development (never commit .dev.vars)
+# Set each value as a Wrangler secret for production: wrangler secret put <KEY>
+
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
