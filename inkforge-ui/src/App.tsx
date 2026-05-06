@@ -1,19 +1,27 @@
 import { useState } from "react";
+import { DashboardPage } from "./pages/DashboardPage";
 import { LedgerPage } from "./pages/LedgerPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { ImportPage } from "./pages/ImportPage";
 
-type Tab = "ledger" | "inventory" | "import";
+type Tab = "dashboard" | "ledger" | "inventory" | "import";
+
+const TAB_LABELS: Record<Tab, string> = {
+  dashboard: "📊 Dashboard",
+  ledger: "📒 Ledger",
+  inventory: "📦 Inventory",
+  import: "📥 Import",
+};
 
 export function App() {
-  const [tab, setTab] = useState<Tab>("ledger");
+  const [tab, setTab] = useState<Tab>("dashboard");
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1200, margin: "0 auto", padding: "0 16px" }}>
       <header style={headerStyle}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>InkForge</h1>
         <nav style={{ display: "flex", gap: 4 }}>
-          {(["ledger", "inventory", "import"] as Tab[]).map((t) => (
+          {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -23,13 +31,14 @@ export function App() {
                 color: tab === t ? "#fff" : "#374151",
               }}
             >
-              {t === "ledger" ? "📒 Ledger" : t === "inventory" ? "📦 Inventory" : "📥 Import"}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </nav>
       </header>
 
       <main style={{ padding: "24px 0" }}>
+        {tab === "dashboard" && <DashboardPage />}
         {tab === "ledger" && <LedgerPage />}
         {tab === "inventory" && <InventoryPage />}
         {tab === "import" && <ImportPage />}
