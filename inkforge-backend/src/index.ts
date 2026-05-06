@@ -6,6 +6,7 @@ import { ledgerRoutes } from "./routes/ledger";
 import { inventoryRoutes } from "./routes/inventory";
 import { importRoutes } from "./routes/import";
 import { marketRoutes } from "./routes/market";
+import { cardRoutes } from "./routes/cards";
 
 export type Env = {
   DB: D1Database;
@@ -45,6 +46,7 @@ app.route("/api/ledger", ledgerRoutes);
 app.route("/api/inventory", inventoryRoutes);
 app.route("/api/import", importRoutes);
 app.route("/api/market", marketRoutes);
+app.route("/api/cards", cardRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.onError((err, c) => {

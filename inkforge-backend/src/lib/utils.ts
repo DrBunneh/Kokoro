@@ -83,5 +83,5 @@ export function isValidEnum<T extends string>(
   value: unknown,
   validValues: readonly T[]
 ): value is T {
-  return typeof value === "string" && (validValues as string[]).includes(value);
+  return typeof value === "string" && (validValues as unknown as string[]).includes(value);
 }
