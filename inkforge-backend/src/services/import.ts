@@ -51,16 +51,38 @@ async function isRowAlreadyImported(
   d1: D1Database,
   platformRef: string,
   productId: string,
+  cardName: string,
   date: string
 ): Promise<boolean> {
   const db = drizzle(d1);
+
+  // When productId is present, use it as the precise identifier.
+  // When absent, fall back to platformRef + cardName + date to avoid
+  // false misses caused by comparing "" against NULL in the DB.
+  if (productId) {
+    const existing = await db
+      .select({ id: ledgerEntries.id })
+      .from(ledgerEntries)
+      .where(
+        and(
+          eq(ledgerEntries.platformRef, platformRef),
+          eq(ledgerEntries.productId, productId),
+          eq(ledgerEntries.date, date),
+          eq(ledgerEntries.platform, "cardmarket")
+        )
+      )
+      .get();
+    return !!existing;
+  }
+
+  // Fallback: no productId — match on platformRef + cardName + date
   const existing = await db
     .select({ id: ledgerEntries.id })
     .from(ledgerEntries)
     .where(
       and(
         eq(ledgerEntries.platformRef, platformRef),
-        eq(ledgerEntries.productId, productId),
+        eq(ledgerEntries.cardName, cardName),
         eq(ledgerEntries.date, date),
         eq(ledgerEntries.platform, "cardmarket")
       )
@@ -174,6 +196,9 @@ export async function executeImport(
     articlesByShipment.set(article.shipmentNr, group);
   }
 
+  // Collect unique card+set combinations for card lookup after all DB writes
+  const uniqueCards = new Map<string, { cardName: string; setName: string; game: string }>();
+
   // Process each shipment
   for (const [shipmentNr, articles] of articlesByShipment) {
     const order = orderMap.get(shipmentNr);
@@ -220,6 +245,7 @@ export async function executeImport(
     }
 
     // Process each article in the shipment
+    let shipmentItemsInserted = 0;
     for (let i = 0; i < articles.length; i++) {
       const article = articles[i]!;
       const itemShippingPence = shippingPerItem[i] ?? 0;
@@ -230,6 +256,7 @@ export async function executeImport(
         d1,
         shipmentNr,
         article.productId,
+        article.articleName,
         article.dateOfPurchase
       );
 
@@ -276,16 +303,20 @@ export async function executeImport(
 
       await db.insert(ledgerEntries).values(entry);
       entriesCreated++;
+      shipmentItemsInserted++;
 
       // Update inventory
       await upsertInventory(d1, article, netCostPence, timestamp);
 
-      // Trigger async card data lookup (best-effort — don't block import on API failure)
-      lookupCard(d1, article.articleName, article.expansion, game).catch(() => {});
+      // Queue unique card for lookup after all DB writes are done
+      const cardKey = `${article.articleName}||${article.expansion}||${game}`;
+      if (!uniqueCards.has(cardKey)) {
+        uniqueCards.set(cardKey, { cardName: article.articleName, setName: article.expansion, game });
+      }
     }
 
-    // Create FEE entry for trustee service fee (one per order)
-    if (trusteeFeesPence > 0) {
+    // Create FEE entry for trustee service fee (one per order, only if new articles were inserted)
+    if (trusteeFeesPence > 0 && shipmentItemsInserted > 0) {
       const feeEntry: NewLedgerEntry = {
         id: uuid(),
         date: articles[0]?.dateOfPurchase ?? timestamp,
@@ -322,6 +353,13 @@ export async function executeImport(
       await db.insert(ledgerEntries).values(feeEntry);
       feesCreated++;
     }
+  }
+
+  // Trigger card lookups for all unique cards encountered in this import.
+  // Run sequentially (rate-limited inside lookupCard) after all DB writes.
+  // Best-effort: failures are swallowed so they don't roll back a successful import.
+  for (const card of uniqueCards.values()) {
+    await lookupCard(d1, card.cardName, card.setName, card.game).catch(() => {});
   }
 
   // Write import log entries to prevent re-import
