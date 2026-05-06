@@ -67,8 +67,8 @@ async function fetchFromLorcast(
 ): Promise<Partial<NewCardDataCache> | null> {
   await enforceRateLimit();
 
-  const q = encodeURIComponent(`"${cardName}"`);
-  const resp = await fetch(`https://lorcast.com/api/cards/search?q=${q}`, {
+  const q = encodeURIComponent(`name:"${cardName}"`);
+  const resp = await fetch(`https://lorcast.com/cards/search?q=${q}`, {
     headers: { Accept: "application/json" },
   });
 
