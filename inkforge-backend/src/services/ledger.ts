@@ -3,6 +3,7 @@ import { eq, and, gte, lte, desc, isNull, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { ledgerEntries } from "../db/schema";
 import { uuid, now, taxYearRange, isValidEnum } from "../lib/utils";
+import { upsertInventoryFromLedger, reverseInventoryFromLedger } from "./inventory";
 import type { NewLedgerEntry, LedgerEntry } from "../db/schema";
 import type { TransactionType, Platform, Game, Category, Condition } from "../lib/types";
 
@@ -152,6 +153,7 @@ export async function createEntry(
   const db = drizzle(d1);
   await db.insert(ledgerEntries).values(row);
   const created = await db.select().from(ledgerEntries).where(eq(ledgerEntries.id, row.id)).get();
+  await upsertInventoryFromLedger(d1, created!);
   return { entry: created! };
 }
 
@@ -327,6 +329,7 @@ export async function deleteEntry(d1: D1Database, id: string): Promise<boolean> 
     .update(ledgerEntries)
     .set({ deletedAt: now(), updatedAt: now() })
     .where(eq(ledgerEntries.id, id));
+  await reverseInventoryFromLedger(d1, existing);
   return true;
 }
 
