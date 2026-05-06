@@ -2,11 +2,11 @@ CURRENT_PHASE: WORKER
 
 CURRENT_WORKER: WORKER
 
-CURRENT_WORK_PACKAGE: WP5 — Ledger Engine
+CURRENT_WORK_PACKAGE: WP8 — Dashboard UI
 
 STATUS: IN_PROGRESS
 
-LAST_FEEDBACK: WP4 COMPLETE. Inspector approved after fixer passes: (1) isRowAlreadyImported productId-empty fallback to platformRef+cardName+date matching, (2) fire-and-forget lookupCard replaced with uniqueCards Map awaited sequentially after all DB writes, (3) FEE entry dedup — shipmentItemsInserted guard prevents duplicate fees on partial monthly export overlaps. TypeScript clean throughout.
+LAST_FEEDBACK: WP6 + WP7 COMPLETE. WP6 Inventory Engine: upsertInventoryItem with weighted avg cost basis, ledger hooks wired into createEntry/deleteEntry, status bucket transitions, location updates, valuation, reconciliation. WP7 Manual Entry UI: React/Vite frontend with Purchase/Sale/WriteOff/Trade/QuickAdd forms, CardAutocomplete with 300ms debounce, Cardmarket import flow, inventory status management. Backend POST /api/cards/identify with Claude Sonnet vision API. TypeScript clean throughout.
 
 FIX_LOOP_COUNT: 0
 
@@ -18,6 +18,9 @@ FIX_LOOP_COUNT: 0
 | WP2 | DB Schema | COMPLETE |
 | WP3 | Card Data Cache | COMPLETE |
 | WP4 | Cardmarket Importer | COMPLETE |
+| WP5 | Ledger Engine | COMPLETE |
+| WP6 | Inventory Engine | COMPLETE |
+| WP7 | Manual Entry UI | COMPLETE |
 
 
 
@@ -182,5 +185,3 @@ This project uses a structured agent workflow. Each agent has a specific role:
 4. **Fixer** TRIGGER: CURRENT_PHASE is FIXER - Forgets prior Senior QA persona, adopts Senior Debugging Specialist and Developer persona. Addresses all issues in the fixes file. once all fixes and tasks are resolved against the acceptance criteria, Marks work as ready for Inspector. Sets current phase to INSPECTOR. CONSTRAINT: You CANNOT mark work as APPROVED or COMPLETE.
 
 5. **Overseer** TRIGGER: CURRENT_PHASE is OVERSEER - Forgets prior Senior QA persona, adopts Project Manager persona. Assigns next work package (loop continues). Sets current phase to WORKER.
-
-

@@ -68,6 +68,80 @@ cardRoutes.get("/search", async (c) => {
 });
 
 /**
+ * POST /api/cards/identify
+ * Accepts a card image and calls Claude Sonnet vision to identify it.
+ * Returns { card_name, set_name, condition_estimate } for form pre-fill.
+ */
+cardRoutes.post("/identify", async (c) => {
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json(err("Request must be multipart/form-data with an image field"), 400);
+  }
+
+  const imageFile = formData.get("image") as unknown as File | null;
+  if (!imageFile || typeof imageFile.arrayBuffer !== "function") {
+    return c.json(err("image file is required"), 400);
+  }
+
+  const buffer = await imageFile.arrayBuffer();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  const mediaType = (imageFile.type || "image/jpeg") as string;
+
+  const requestBody = {
+    model: "claude-sonnet-4-6",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaType, data: base64 },
+          },
+          {
+            type: "text",
+            text: 'Identify this TCG card. Return ONLY valid JSON with no markdown: {"card_name":"<name>","set_name":"<set>","game":"<lorcana|pokemon|mtg|yugioh|onepiece|other>","condition_estimate":"<NM|LP|MP|HP|DMG>"}',
+          },
+        ],
+      },
+    ],
+  };
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": c.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      return c.json(err("Claude API error", text), 502);
+    }
+
+    const data = await response.json() as { content: Array<{ type: string; text: string }> };
+    const text = data.content.find((b) => b.type === "text")?.text ?? "";
+
+    let parsed: { card_name: string; set_name: string; game: string; condition_estimate: string };
+    try {
+      parsed = JSON.parse(text.trim());
+    } catch {
+      return c.json(err("Could not parse card identification from Claude response", text), 422);
+    }
+
+    return c.json(ok(parsed));
+  } catch (e) {
+    return c.json(err("Failed to call Claude API", e instanceof Error ? e.message : e), 502);
+  }
+});
+
+/**
  * GET /api/cards/cache/:cardName/:setName
  * Returns the raw cache entry for a card (for debugging/testing).
  */
