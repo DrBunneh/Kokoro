@@ -1,14 +1,14 @@
-CURRENT\_PHASE: OVERSEER
+CURRENT\_PHASE: INSPECTOR
 
-CURRENT\_WORKER: OVERSEER
+CURRENT\_WORKER: INSPECTOR
 
-CURRENT\_WORK\_PACKAGE: WP3 — Card Data Cache (Lorcana API Integration)
+CURRENT\_WORK\_PACKAGE: WP4 — Cardmarket Importer
 
-STATUS: COMPLETE
+STATUS: REVIEW
 
-LAST\_FEEDBACK: WP3 APPROVED. Fixer corrected lorcast API path (/api/cards/search → /cards/search) and search query format (added name: field qualifier per spec). All acceptance criteria satisfied. Proceeding to WP4.
+LAST\_FEEDBACK: WORKER complete. Implemented: cardmarket.ts parser (parseArticlesFile, parseOrdersFile, buildImportPreview, hashFile), import.ts service (checkDuplicate, executeImport with row-level dedup, shipping split, seller upsert, inventory upsert, fee entries), import route (POST /cardmarket/upload with R2 staging, POST /cardmarket/confirm). xlsx/SheetJS added as dependency. TypeScript clean.
 
-FIX\_LOOP\_COUNT: 1
+FIX\_LOOP\_COUNT: 0
 
 
 

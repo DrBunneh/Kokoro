@@ -11,8 +11,9 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "drizzle-orm": "^0.41.0",
     "hono": "^4.7.0",
-    "drizzle-orm": "^0.41.0"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250505.0",
