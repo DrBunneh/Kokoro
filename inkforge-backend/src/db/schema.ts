@@ -32,6 +32,7 @@ export const ledgerEntries = sqliteTable(
     currencyRate:        integer("currency_rate"),               // stored as rate × 10000 for precision
     notes:               text("notes"),
     bundleId:            text("bundle_id"),
+    marketValueAtAcquisitionPence: integer("market_value_at_acquisition_pence"), // PRIZE entries: market value at time of acquisition (COGS is £0)
     source:              text("source").notNull().default("manual"), // LedgerEntrySource
     deletedAt:           text("deleted_at"),                    // soft delete for HMRC audit trail
     createdAt:           text("created_at").notNull(),
@@ -187,7 +188,7 @@ export const cardDataCache = sqliteTable(
     createdAt:            text("created_at").notNull(),
   },
   (t) => [
-    uniqueIndex("cache_card_set_idx").on(t.cardName, t.setName),
+    uniqueIndex("cache_card_set_game_idx").on(t.cardName, t.setName, t.game),
     index("cache_product_id_idx").on(t.cardmarketProductId),
   ]
 );
@@ -224,6 +225,7 @@ export const importLogs = sqliteTable(
     rowsProcessed:  integer("rows_processed").notNull().default(0),
     rowsSkipped:    integer("rows_skipped").notNull().default(0),
     importedAt:     text("imported_at").notNull(),
+    importedBy:     text("imported_by").default("owner"),
   },
   (t) => [
     uniqueIndex("import_hash_idx").on(t.fileHash),

@@ -17,7 +17,7 @@ CREATE TABLE `card_data_cache` (
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `cache_card_set_idx` ON `card_data_cache` (`card_name`,`set_name`);--> statement-breakpoint
+CREATE UNIQUE INDEX `cache_card_set_game_idx` ON `card_data_cache` (`card_name`,`set_name`,`game`);--> statement-breakpoint
 CREATE INDEX `cache_product_id_idx` ON `card_data_cache` (`cardmarket_product_id`);--> statement-breakpoint
 CREATE TABLE `cardmarket_sellers` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -40,7 +40,8 @@ CREATE TABLE `import_logs` (
 	`file_type` text NOT NULL,
 	`rows_processed` integer DEFAULT 0 NOT NULL,
 	`rows_skipped` integer DEFAULT 0 NOT NULL,
-	`imported_at` text NOT NULL
+	`imported_at` text NOT NULL,
+	`imported_by` text DEFAULT 'owner'
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `import_hash_idx` ON `import_logs` (`file_hash`);--> statement-breakpoint
@@ -101,6 +102,7 @@ CREATE TABLE `ledger_entries` (
 	`currency_rate` integer,
 	`notes` text,
 	`bundle_id` text,
+	`market_value_at_acquisition_pence` integer,
 	`source` text DEFAULT 'manual' NOT NULL,
 	`deleted_at` text,
 	`created_at` text NOT NULL,

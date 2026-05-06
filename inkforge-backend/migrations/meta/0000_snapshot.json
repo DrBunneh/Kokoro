@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1435559f-04e0-4824-a44b-f65934693b08",
+  "id": "b1c40cfb-2645-4d35-9c73-aadb76ae0b0e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "card_data_cache": {
@@ -122,11 +122,12 @@
         }
       },
       "indexes": {
-        "cache_card_set_idx": {
-          "name": "cache_card_set_idx",
+        "cache_card_set_game_idx": {
+          "name": "cache_card_set_game_idx",
           "columns": [
             "card_name",
-            "set_name"
+            "set_name",
+            "game"
           ],
           "isUnique": true
         },
@@ -287,6 +288,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "imported_by": {
+          "name": "imported_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'owner'"
         }
       },
       "indexes": {
@@ -696,6 +705,13 @@
         "bundle_id": {
           "name": "bundle_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "market_value_at_acquisition_pence": {
+          "name": "market_value_at_acquisition_pence",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

@@ -10,10 +10,12 @@ export function intToPounds(pence: number): string {
   return (pence / 100).toFixed(2);
 }
 
-/** Parse a European decimal string ("67,84") or number to integer pence */
+/** Parse a European decimal string ("67,84" or "1.234,56") or number to integer pence */
 export function parseEuroDecimal(val: string | number): number {
   if (typeof val === "number") return Math.round(val * 100);
-  return Math.round(parseFloat(val.replace(",", ".")) * 100);
+  // Strip thousand-separator periods first, then convert decimal comma to period
+  const normalised = val.replace(/\./g, "").replace(",", ".");
+  return Math.round(parseFloat(normalised) * 100);
 }
 
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
@@ -51,6 +53,8 @@ export function splitProportionally(
   totalPence: number,
   itemValuesPence: number[]
 ): number[] {
+  if (itemValuesPence.length === 0) return [];
+
   const grandTotal = itemValuesPence.reduce((sum, v) => sum + v, 0);
   if (grandTotal === 0) {
     const even = Math.floor(totalPence / itemValuesPence.length);
