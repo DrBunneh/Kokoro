@@ -5,7 +5,7 @@ on:
     branches:
       - claude/review-and-plan-id4Br
       - main
-
+  workflow_dispatch:
 jobs:
   deploy-worker:
     name: Deploy Worker
