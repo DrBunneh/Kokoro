@@ -20,5 +20,10 @@
     }
   ],
 
-  "workers_dev": true
+  "routes": [
+    {
+      "pattern": "backend-dash.inkforge.io/*",
+      "zone_name": "inkforge.io"
+    }
+  ]
 }
