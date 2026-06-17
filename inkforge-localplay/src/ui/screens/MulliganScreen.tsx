@@ -151,7 +151,7 @@ export function MulliganScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mx-auto mb-2 flex w-full max-w-2xl items-center gap-2">
         <select
           value={deckId ?? ""}
           onChange={(e) => {
@@ -171,7 +171,7 @@ export function MulliganScreen() {
         </button>
       </div>
 
-      <div className="mb-3 flex gap-1 rounded-lg bg-white/5 p-1 text-sm">
+      <div className="mx-auto mb-3 flex w-full max-w-2xl gap-1 rounded-lg bg-white/5 p-1 text-sm">
         {(
           [
             ["play", true],
@@ -191,12 +191,12 @@ export function MulliganScreen() {
           </button>
         ))}
       </div>
-      <p className="mb-2 text-xs text-slate-400">
+      <p className="mx-auto mb-2 w-full max-w-2xl text-xs text-slate-400">
         {onThePlay ? "First player — you skip your first draw." : "Second player — you draw on turn 1."}
       </p>
 
       {phase === "ready" && (
-        <button type="button" onClick={newHand} className="min-h-tap w-full rounded-xl bg-ink-sapphire font-semibold text-white">
+        <button type="button" onClick={newHand} className="mx-auto min-h-tap w-full max-w-2xl rounded-xl bg-ink-sapphire font-semibold text-white">
           Draw opening hand
         </button>
       )}
@@ -211,7 +211,7 @@ export function MulliganScreen() {
           {phase === "animating" && <p className="mb-2 text-sm text-slate-400">Redrawing…</p>}
           {phase === "done" && <p className="mb-2 text-sm text-emerald-300">Final hand:</p>}
 
-          <div className="grid min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto">
+          <div className="grid min-h-0 flex-1 content-start grid-cols-4 gap-2 overflow-y-auto landscape:grid-cols-7">
             {slots.map((slot) => {
               const card = index.get(slot.id);
               if (!card) return null;
@@ -240,12 +240,12 @@ export function MulliganScreen() {
           </div>
 
           {phase === "choosing" && (
-            <button type="button" onClick={submitMulligan} className="mt-2 min-h-tap w-full rounded-xl bg-ink-sapphire font-semibold text-white">
+            <button type="button" onClick={submitMulligan} className="mx-auto mt-2 min-h-tap w-full max-w-2xl rounded-xl bg-ink-sapphire font-semibold text-white">
               {selected.size === 0 ? "Keep all 7" : `Bottom ${selected.size} & redraw`}
             </button>
           )}
           {phase === "done" && (
-            <button type="button" onClick={() => setPhase("ready")} className="mt-2 min-h-tap w-full rounded-xl bg-white/10 font-semibold text-white">
+            <button type="button" onClick={() => setPhase("ready")} className="mx-auto mt-2 min-h-tap w-full max-w-2xl rounded-xl bg-white/10 font-semibold text-white">
               New hand
             </button>
           )}

@@ -5,9 +5,11 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const atRoot = pathname === "/";
+  // Board/play screens use the full (landscape) width; menus stay phone-width.
+  const wide = pathname.startsWith("/play/");
 
   return (
-    <div className="mx-auto flex h-full max-w-md flex-col">
+    <div className={`mx-auto flex h-full flex-col ${wide ? "max-w-none" : "max-w-md"}`}>
       {!atRoot && (
         <header className="flex items-center p-2">
           <button
@@ -19,7 +21,7 @@ export function AppLayout() {
           </button>
         </header>
       )}
-      <main className="flex-1 overflow-y-auto p-4">
+      <main className={`flex-1 overflow-y-auto ${wide ? "px-3 pb-3" : "p-4"}`}>
         <Outlet />
       </main>
     </div>
