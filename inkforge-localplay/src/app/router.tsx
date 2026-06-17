@@ -1,16 +1,12 @@
 import { createBrowserRouter } from "react-router-dom";
 import { AppLayout } from "@/ui/AppLayout";
 import { MainMenu } from "@/ui/screens/MainMenu";
-import {
-  DecksScreen,
-  DeckBuilderScreen,
-  DecklistsScreen,
-  PlayMenuScreen,
-  MulliganScreen,
-  LocalPlayScreen,
-  StatsScreen,
-  ReplaysScreen,
-} from "@/ui/screens/stubs";
+import { DecksScreen } from "@/ui/screens/DecksScreen";
+import { DeckBuilderScreen } from "@/ui/screens/DeckBuilderScreen";
+import { DecklistsScreen } from "@/ui/screens/DecklistsScreen";
+import { MulliganScreen } from "@/ui/screens/MulliganScreen";
+import { PlayMenuScreen } from "@/ui/screens/PlayMenuScreen";
+import { LocalPlayScreen, StatsScreen, ReplaysScreen } from "@/ui/screens/stubs";
 
 /**
  * Screen inventory per spec §11. Screens later than P0 are stubbed but routable
