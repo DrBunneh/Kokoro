@@ -10,3 +10,8 @@ android/.gradle
 .env
 
 *.tsbuildinfo
+
+# OTA build artifacts (generated in CI)
+web-bundle.zip
+latest.json
+app-debug.apk

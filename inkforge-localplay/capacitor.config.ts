@@ -8,6 +8,12 @@ const config: CapacitorConfig = {
     // Allow the app to run fully offline; no cleartext needed (images are HTTPS).
     allowMixedContent: false,
   },
+  plugins: {
+    // OTA web-bundle updates are driven manually by the homepage Update button.
+    CapacitorUpdater: {
+      autoUpdate: false,
+    },
+  },
 };
 
 export default config;

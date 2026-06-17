@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -67,3 +67,35 @@ jobs:
           name: inkforge-localplay-debug-apk
           path: inkforge-localplay/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # ---- OTA web-bundle release (consumed by the in-app Update button) ----
+      - name: Package web bundle + manifest
+        if: github.ref_name == 'claude/spec-review-nwqtvg'
+        working-directory: inkforge-localplay
+        run: |
+          ( cd dist && zip -qr ../web-bundle.zip . )
+          VER="$(git rev-parse --short HEAD)"
+          MIN="$(cat ota/min-native-build.txt)"
+          REPO="${{ github.repository }}"
+          cat > latest.json <<EOF
+          {
+            "version": "${VER}",
+            "url": "https://github.com/${REPO}/releases/download/web-latest/web-bundle.zip",
+            "minNativeBuild": ${MIN},
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          cp android/app/build/outputs/apk/debug/app-debug.apk app-debug.apk
+          echo "Built web bundle ${VER} (minNativeBuild ${MIN})"
+
+      - name: Publish web-latest release
+        if: github.ref_name == 'claude/spec-review-nwqtvg'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: web-latest
+          name: Latest web bundle + APK
+          body: "Rolling build. The in-app Update button pulls web-bundle.zip via latest.json; app-debug.apk is the installable native shell."
+          files: |
+            inkforge-localplay/web-bundle.zip
+            inkforge-localplay/latest.json
+            inkforge-localplay/app-debug.apk

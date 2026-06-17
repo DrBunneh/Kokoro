@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/cn";
+import { UpdateButton } from "@/ui/components/UpdateButton";
 
 /** Main menu (spec §11.1): logo + 2×2 grid Decks | Play / Stats | Replays. */
 export function MainMenu() {
@@ -34,6 +35,9 @@ export function MainMenu() {
             {t.label}
           </button>
         ))}
+      </div>
+      <div className="pb-4">
+        <UpdateButton />
       </div>
     </div>
   );
