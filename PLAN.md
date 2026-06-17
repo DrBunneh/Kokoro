@@ -11,10 +11,11 @@ criteria, and the environment-specific decisions agreed during spec review.
 
 | # | Question | Decision |
 |---|----------|----------|
-| 1 | Relationship to existing **InkForge** (Cloudflare Workers inventory/ledger app already in this repo) | **New, separate codebase.** InkForge (`inkforge-backend/`, `inkforge-ui/`, `wrangler.jsonc`, its specs) is left **untouched**. The duel simulator lives in a new top-level `app/` directory. |
-| 2 | Source of truth for rules (`/mnt/skills/user/disney-lorcana/` is absent here) | **User will provide the rules file.** All engine work (P1+) is **gated** on receiving it. P0 has no rules dependency and can start immediately. |
-| 3 | Immediate deliverable | **This plan.** No implementation until the plan is approved. |
-| 4 | Card images (`cards.duels.ink` blocked here) | **Configurable image source + placeholder fallback.** Image base-URL is config-driven and swappable; a handful of test images are vendored into the repo (GitHub-hosted) for in-sandbox dev; real CDN fetch is verified on-device. |
+| 1 | Relationship to existing **InkForge** (Cloudflare Workers inventory/ledger app already in this repo) | **New, separate codebase.** InkForge (`inkforge-backend/`, `inkforge-ui/`, `wrangler.jsonc`, its specs) is left **untouched**. The duel simulator lives in a new top-level **`inkforge-localplay/`** directory. |
+| 2 | Source of truth for rules (`/mnt/skills/user/disney-lorcana/` is absent here) | **Rules file provided:** official Disney Lorcana Comprehensive Rules, effective **Feb 28 2025** (`/tmp` working copy; to be vendored into the repo). See Finding §1.6 re keyword coverage. Engine work (P1+) can proceed. |
+| 3 | Immediate deliverable | Plan approved → **building P0.** |
+| 4 | Card images (`cards.duels.ink` blocked here) | **Configurable image source + placeholder fallback.** Image base-URL is config-driven and swappable; up to **15** card images (a 4×15 test deck) are vendored into the repo for in-sandbox dev; real CDN fetch is verified on-device. |
+| 5 | App directory name | **`inkforge-localplay/`** (a logo SVG will be supplied to replace the placeholder). |
 
 ### Environment facts (validated, not assumed)
 
@@ -49,6 +50,12 @@ optional importer must account for them:
 5. **`CardInstance` in real data has extra printed fields** (`rarity`, `tcgplayer`, `foil`,
    `flavorText`, `name`/`title` split). → Keep our denormalised subset (§4.2) but the ingest
    normaliser should not choke on extras.
+6. **The provided rules file (Feb 28 2025 CR) predates 3 keywords in the spec's T2 list.** It
+   defines 12 keywords (Bodyguard, Challenger, Evasive, Reckless, Resist, Rush, Shift, Singer,
+   Sing Together, Support, Vanish, Ward — §10.2–10.13) but **not Alert, Boost, or Underdog**.
+   → P1 keyword work implements the 12 authoritatively from the CR; Alert/Boost/Underdog are
+   implemented from printed card reminder-text with Manual-Mode fallback unless an updated CR is
+   supplied. (Non-blocking for P0.)
 
 ---
 
