@@ -210,6 +210,76 @@ describe("turn actions: play & quest", () => {
   });
 });
 
+describe("challenge (ATTACK)", () => {
+  /** Reach P1's turn with attacker A (ready) and an exerted defender B in play. */
+  function challengeSetup(seed: string, lookup = lookupWith()): { g: GameState; aId: string; bId: string; quest?: boolean } {
+    let g = newGame(seed, deckOf(60, "a"), deckOf(60, "b"), lookup);
+    g = reduce(g, { type: "CHOOSE_STARTING_PLAYER", player: 1 }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 1, cardInstanceIds: [] }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 2, cardInstanceIds: [] }).state;
+
+    const aId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: aId }).state;
+    g = reduce(g, { type: "END_TURN" }).state; // → P2 t2
+
+    const bId = g.players[2].hand[0]!.instanceId;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[2].hand[1]!.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: bId }).state;
+    g = reduce(g, { type: "END_TURN" }).state; // → P1 t3 (A dries)
+    g = reduce(g, { type: "END_TURN" }).state; // → P2 t4 (B dries)
+    g = reduce(g, { type: "QUEST", cardInstanceId: bId }).state; // B exerts
+    g = reduce(g, { type: "END_TURN" }).state; // → P1 t5
+    return { g, aId, bId };
+  }
+
+  it("resolves simultaneous damage and banishes both 1/1s", () => {
+    const { g, aId, bId } = challengeSetup("ch1");
+    const after = reduce(g, { type: "ATTACK", attackerId: aId, defenderId: bId }).state;
+    expect(after.players[1].field.some((c) => c.instanceId === aId)).toBe(false);
+    expect(after.players[2].field.some((c) => c.instanceId === bId)).toBe(false);
+    expect(after.players[1].discard.some((c) => c.instanceId === aId)).toBe(true);
+    expect(after.players[2].discard.some((c) => c.instanceId === bId)).toBe(true);
+  });
+
+  it("rejects challenging a ready (un-exerted) character", () => {
+    // Same setup but P2 never quests, so B stays ready.
+    let g = newGame("ch2", deckOf(60, "a"), deckOf(60, "b"));
+    g = reduce(g, { type: "CHOOSE_STARTING_PLAYER", player: 1 }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 1, cardInstanceIds: [] }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 2, cardInstanceIds: [] }).state;
+    const aId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: aId }).state;
+    g = reduce(g, { type: "END_TURN" }).state;
+    const bId = g.players[2].hand[0]!.instanceId;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[2].hand[1]!.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: bId }).state;
+    g = reduce(g, { type: "END_TURN" }).state; // → P1 t3
+    g = reduce(g, { type: "END_TURN" }).state; // → P2 t4 (B dries, stays ready)
+    g = reduce(g, { type: "END_TURN" }).state; // → P1 t5
+    expect(() => reduce(g, { type: "ATTACK", attackerId: aId, defenderId: bId })).toThrow(/exerted/);
+  });
+
+  it("blocks a non-Evasive attacker from challenging an Evasive defender", () => {
+    const evasiveP2: CardLookup = (id) => printed(id, { abilities: id.includes("-b") ? [{ ability: "Evasive" }] : [] });
+    const { g, aId, bId } = challengeSetup("ch3", evasiveP2);
+    expect(() => reduce(g, { type: "ATTACK", attackerId: aId, defenderId: bId })).toThrow(/Evasive/);
+  });
+
+  it("a high-willpower defender with Resist survives and kills the attacker", () => {
+    const tanky: CardLookup = (id) =>
+      printed(id, id.includes("-b") ? { willpower: 5, strength: 3, abilities: [{ ability: "Resist +1" }] } : {});
+    const { g, aId, bId } = challengeSetup("ch4", tanky);
+    const after = reduce(g, { type: "ATTACK", attackerId: aId, defenderId: bId }).state;
+    // Attacker (1/1) dies to B's 3 strength; B (str3/wp5, Resist 1) takes max(0,1-1)=0 and lives.
+    expect(after.players[1].discard.some((c) => c.instanceId === aId)).toBe(true);
+    const b = after.players[2].field.find((c) => c.instanceId === bId);
+    expect(b).toBeDefined();
+    expect(b!.damage).toBe(0);
+  });
+});
+
 describe("applyAction framing", () => {
   const script: Action[] = [
     { type: "CHOOSE_STARTING_PLAYER", player: 1 },

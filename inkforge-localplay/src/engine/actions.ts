@@ -20,6 +20,12 @@ import {
 } from "./state";
 import { Rng } from "./rng";
 import { makeFrame, type Frame, type LogEntry } from "./replay";
+import {
+  effectiveStrength,
+  hasKeyword,
+  isBanished,
+  keywordValue,
+} from "./keywords";
 
 export type Action =
   | { type: "CHOOSE_STARTING_PLAYER"; player: PlayerId }
@@ -27,6 +33,7 @@ export type Action =
   | { type: "ADD_TO_INK"; cardInstanceId: string }
   | { type: "PLAY_CARD"; cardInstanceId: string }
   | { type: "QUEST"; cardInstanceId: string }
+  | { type: "ATTACK"; attackerId: string; defenderId: string }
   | { type: "END_TURN" }
   | { type: "GAME_FINISH"; winner: PlayerId; reason: "concession" };
 
@@ -127,6 +134,22 @@ function payInk(p: PlayerState, cost: number): void {
       paid += 1;
     }
   }
+}
+
+/** Banish a card from a player's field to their discard (with any tucked cards). */
+function banishCard(p: PlayerState, card: CardInstance, logs: LogEntry[], turnNumber: number): void {
+  const i = p.field.indexOf(card);
+  if (i >= 0) p.field.splice(i, 1);
+  if (card.cardsUnder.length) {
+    p.discard.push(...card.cardsUnder);
+    card.cardsUnder = [];
+  }
+  card.damage = 0;
+  card.exerted = false;
+  card.justPlayed = false;
+  card.appliedEffects = [];
+  p.discard.push(card);
+  logs.push(log({ turnNumber, player: null, type: "CARD_DESTROYED", message: `${card.printed.fullName} was banished`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
 }
 
 /** Draw `n` from the top of a player's deck; returns false if they decked out. */
@@ -298,6 +321,47 @@ export function reduce(state: GameState, action: Action): { state: GameState; lo
       p.lore += gained;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
+      return { state: next, logs };
+    }
+
+    case "ATTACK": {
+      if (next.status !== "playing") throw new GameError("Not in play");
+      const ap = next.players[next.currentPlayer];
+      const dp = next.players[otherPlayer(next.currentPlayer)];
+      const attacker = ap.field.find((c) => c.instanceId === action.attackerId);
+      if (!attacker || attacker.printed.type !== "character") throw new GameError("Attacker is not a character in play");
+      if (attacker.exerted) throw new GameError("Attacker is exerted");
+      if (attacker.justPlayed && !hasKeyword(attacker, "Rush")) throw new GameError("Attacker is drying");
+
+      const defender = dp.field.find((c) => c.instanceId === action.defenderId);
+      if (!defender) throw new GameError("Defender is not in play");
+      const defenderIsChar = defender.printed.type === "character";
+      if (defenderIsChar && !defender.exerted) throw new GameError("Can only challenge exerted characters");
+      if (defenderIsChar && hasKeyword(defender, "Evasive") && !hasKeyword(attacker, "Evasive")) {
+        throw new GameError("Only Evasive characters can challenge an Evasive character");
+      }
+      // Bodyguard: if a legal enemy target has Bodyguard, one must be chosen.
+      const legalTargets = dp.field.filter((c) => c.printed.type !== "character" || c.exerted);
+      const hasBodyguardTarget = legalTargets.some((c) => hasKeyword(c, "Bodyguard"));
+      if (hasBodyguardTarget && !hasKeyword(defender, "Bodyguard")) {
+        throw new GameError("Must challenge a character with Bodyguard");
+      }
+
+      // Declaration: the attacker exerts.
+      attacker.exerted = true;
+
+      // Challenge damage (simultaneous), with Challenger +N and Resist applied.
+      const atkStrength = effectiveStrength(attacker) + keywordValue(attacker, "Challenger");
+      const defStrength = defenderIsChar ? effectiveStrength(defender) : 0;
+      const toDefender = Math.max(0, atkStrength - keywordValue(defender, "Resist"));
+      const toAttacker = Math.max(0, defStrength - keywordValue(attacker, "Resist"));
+      defender.damage += toDefender;
+      attacker.damage += toAttacker;
+      logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_ATTACK", message: `${attacker.printed.fullName} challenged ${defender.printed.fullName}`, cardRefs: [{ id: attacker.printed.id, name: attacker.printed.fullName }, { id: defender.printed.id, name: defender.printed.fullName }] }));
+
+      // Banish anything that took lethal damage (simultaneous).
+      if (isBanished(defender)) banishCard(dp, defender, logs, next.turnNumber);
+      if (isBanished(attacker)) banishCard(ap, attacker, logs, next.turnNumber);
       return { state: next, logs };
     }
 
