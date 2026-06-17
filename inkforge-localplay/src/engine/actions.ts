@@ -25,6 +25,8 @@ export type Action =
   | { type: "CHOOSE_STARTING_PLAYER"; player: PlayerId }
   | { type: "MULLIGAN"; player: PlayerId; cardInstanceIds: string[] }
   | { type: "ADD_TO_INK"; cardInstanceId: string }
+  | { type: "PLAY_CARD"; cardInstanceId: string }
+  | { type: "QUEST"; cardInstanceId: string }
   | { type: "END_TURN" }
   | { type: "GAME_FINISH"; winner: PlayerId; reason: "concession" };
 
@@ -101,6 +103,30 @@ export function createGame(cfg: NewGameConfig): GameState {
 
 function clone(state: GameState): GameState {
   return structuredClone(state);
+}
+
+/** Effective value of a stat including temporary buffs/debuffs. */
+function effectiveLore(card: CardInstance): number {
+  const base = card.printed.lore ?? 0;
+  const delta = card.appliedEffects.reduce((n, e) => n + (e.lore ?? 0), 0);
+  return base + delta;
+}
+
+/** Ready (un-exerted) ink available to pay costs. */
+function readyInk(p: PlayerState): CardInstance[] {
+  return p.inkwell.filter((c) => !c.exerted);
+}
+
+/** Pay a cost by exerting that many ready ink. Caller must check affordability. */
+function payInk(p: PlayerState, cost: number): void {
+  let paid = 0;
+  for (const ink of p.inkwell) {
+    if (paid >= cost) break;
+    if (!ink.exerted) {
+      ink.exerted = true;
+      paid += 1;
+    }
+  }
 }
 
 /** Draw `n` from the top of a player's deck; returns false if they decked out. */
@@ -218,6 +244,60 @@ export function reduce(state: GameState, action: Action): { state: GameState; lo
       p.inkwell.push(card);
       next.hasInkedThisTurn = true;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PUT_INTO_INKWELL", message: `${p.name} inked ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+      return { state: next, logs };
+    }
+
+    case "PLAY_CARD": {
+      if (next.status !== "playing") throw new GameError("Not in play");
+      const p = next.players[next.currentPlayer];
+      const idx = p.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
+      if (idx < 0) throw new GameError("Card not in hand");
+      const card = p.hand[idx]!;
+      const cost = card.printed.cost;
+      if (readyInk(p).length < cost) throw new GameError("Not enough ink");
+      payInk(p, cost);
+      p.hand.splice(idx, 1);
+
+      switch (card.printed.type) {
+        case "character":
+          card.justPlayed = true; // drying
+          card.exerted = false;
+          card.damage = 0;
+          p.field.push(card);
+          break;
+        case "location":
+          card.justPlayed = false;
+          card.exerted = false;
+          p.field.push(card);
+          break;
+        case "item":
+          card.justPlayed = false;
+          p.items.push(card);
+          break;
+        case "action":
+        case "song":
+          // Effects resolve via the DSL / Manual Mode (later WP); the card goes
+          // to discard after resolving.
+          p.discard.push(card);
+          break;
+      }
+      logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} played ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+      return { state: next, logs };
+    }
+
+    case "QUEST": {
+      if (next.status !== "playing") throw new GameError("Not in play");
+      const p = next.players[next.currentPlayer];
+      const card = p.field.find((c) => c.instanceId === action.cardInstanceId);
+      if (!card) throw new GameError("Character not in play");
+      if (card.printed.type !== "character") throw new GameError("Only characters can quest");
+      if (card.exerted) throw new GameError("Character is exerted");
+      if (card.justPlayed) throw new GameError("Character is drying (played this turn)");
+      card.exerted = true;
+      const gained = effectiveLore(card);
+      p.lore += gained;
+      logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+      logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
       return { state: next, logs };
     }
 

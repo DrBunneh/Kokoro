@@ -13,6 +13,9 @@ function printed(id: string, over: Partial<PrintedCard> = {}): PrintedCard {
     colors: ["ruby"],
     cost: 1,
     inkable: true,
+    strength: 1,
+    willpower: 1,
+    lore: 1,
     abilities: [],
     specialAbilities: [],
     subtypes: [],
@@ -145,6 +148,65 @@ describe("setup → play", () => {
     g = reduce(g, { type: "GAME_FINISH", winner: 1, reason: "concession" }).state;
     expect(g.status).toBe("finished");
     expect(() => reduce(g, { type: "END_TURN" })).toThrow(/finished/);
+  });
+});
+
+describe("turn actions: play & quest", () => {
+  function start(seed = "ta"): GameState {
+    let g = newGame(seed);
+    g = reduce(g, { type: "CHOOSE_STARTING_PLAYER", player: 1 }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 1, cardInstanceIds: [] }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 2, cardInstanceIds: [] }).state;
+    return g;
+  }
+
+  it("plays a character by paying ink; it enters drying with ink exerted", () => {
+    let g = start("play1");
+    const toPlay = g.players[1].hand[0]!;
+    const toInk = g.players[1].hand[1]!;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: toInk.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: toPlay.instanceId }).state;
+
+    const inPlay = g.players[1].field.find((c) => c.instanceId === toPlay.instanceId);
+    expect(inPlay).toBeDefined();
+    expect(inPlay!.justPlayed).toBe(true);
+    expect(g.players[1].hand.some((c) => c.instanceId === toPlay.instanceId)).toBe(false);
+    expect(g.players[1].inkwell.filter((c) => c.exerted)).toHaveLength(1);
+  });
+
+  it("rejects playing without enough ink", () => {
+    const g = start("play2");
+    const card = g.players[1].hand[0]!;
+    expect(() => reduce(g, { type: "PLAY_CARD", cardInstanceId: card.instanceId })).toThrow(/ink/i);
+  });
+
+  it("rejects questing a drying character", () => {
+    let g = start("q1");
+    const c = g.players[1].hand[0]!;
+    const ink = g.players[1].hand[1]!;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: ink.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: c.instanceId }).state;
+    expect(() => reduce(g, { type: "QUEST", cardInstanceId: c.instanceId })).toThrow(/drying/);
+  });
+
+  it("quests a ready character for its lore once it has dried", () => {
+    let g = start("q2");
+    const c = g.players[1].hand[0]!;
+    const ink = g.players[1].hand[1]!;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: ink.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: c.instanceId }).state;
+    g = reduce(g, { type: "END_TURN" }).state; // → P2
+    g = reduce(g, { type: "END_TURN" }).state; // → back to P1, readies + clears drying
+
+    const ready = g.players[1].field.find((x) => x.instanceId === c.instanceId)!;
+    expect(ready.justPlayed).toBe(false);
+    expect(ready.exerted).toBe(false);
+
+    const before = g.players[1].lore;
+    g = reduce(g, { type: "QUEST", cardInstanceId: c.instanceId }).state;
+    expect(g.players[1].lore).toBe(before + 1); // stub character lore = 1
+    expect(g.players[1].field.find((x) => x.instanceId === c.instanceId)!.exerted).toBe(true);
+    expect(() => reduce(g, { type: "QUEST", cardInstanceId: c.instanceId })).toThrow(/exerted/);
   });
 });
 
