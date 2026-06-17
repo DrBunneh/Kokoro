@@ -6,6 +6,7 @@ import { DeckBuilderScreen } from "@/ui/screens/DeckBuilderScreen";
 import { DecklistsScreen } from "@/ui/screens/DecklistsScreen";
 import { MulliganScreen } from "@/ui/screens/MulliganScreen";
 import { PlayMenuScreen } from "@/ui/screens/PlayMenuScreen";
+import { HotSeatScreen } from "@/ui/screens/HotSeatScreen";
 import { LocalPlayScreen, StatsScreen, ReplaysScreen } from "@/ui/screens/stubs";
 
 /**
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "decks/:deckId/list", element: <DecklistsScreen /> },
       { path: "play", element: <PlayMenuScreen /> },
       { path: "play/mulligan", element: <MulliganScreen /> },
+      { path: "play/hotseat", element: <HotSeatScreen /> },
       { path: "play/local", element: <LocalPlayScreen /> },
       { path: "stats", element: <StatsScreen /> },
       { path: "replays", element: <ReplaysScreen /> },

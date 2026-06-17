@@ -42,6 +42,13 @@ export function PlayMenuScreen() {
       </button>
       <button
         type="button"
+        onClick={() => navigate("/play/hotseat")}
+        className="min-h-tap w-full rounded-xl bg-ink-emerald/80 font-semibold text-white"
+      >
+        Hot-seat (pass &amp; play)
+      </button>
+      <button
+        type="button"
         onClick={() => navigate("/play/local")}
         className="min-h-tap w-full rounded-xl bg-white/10 font-semibold text-slate-100"
       >
