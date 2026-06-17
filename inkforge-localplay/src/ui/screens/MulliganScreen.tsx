@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDecks } from "@/state/useDecks";
 import { useCardDb } from "@/ui/hooks/useCardDb";
@@ -8,8 +8,25 @@ import { CardThumb } from "@/ui/components/CardThumb";
 import { cn } from "@/lib/cn";
 
 const HAND_SIZE = 7;
+const OUT_MS = 320;
+const IN_MS = 340;
 
-type Phase = "ready" | "choosing" | "done";
+type Phase = "ready" | "choosing" | "animating" | "done";
+type Anim = "in" | "idle" | "out";
+
+interface Slot {
+  key: number;
+  id: string;
+  anim: Anim;
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
 
 /** Mulligan trainer (spec §6.6, §11.6): draw 7, bottom a subset, redraw equal, once. */
 export function MulliganScreen() {
@@ -20,9 +37,19 @@ export function MulliganScreen() {
   const [deckId, setDeckId] = useState<string | null>(null);
   const [onThePlay, setOnThePlay] = useState(true);
   const [phase, setPhase] = useState<Phase>("ready");
-  const [order, setOrder] = useState<string[]>([]); // shuffled deck (instance positions)
-  const [hand, setHand] = useState<string[]>([]); // ids of opening 7 (or current)
+  const [order, setOrder] = useState<string[]>([]);
+  const [slots, setSlots] = useState<Slot[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const keyCounter = useRef(0);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const nextKey = () => keyCounter.current++;
+  const after = (ms: number, fn: () => void) => {
+    timers.current.push(setTimeout(fn, prefersReducedMotion() ? 0 : ms));
+  };
+
+  // Clear pending timers on unmount.
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   useEffect(() => {
     if (!loaded) void load();
@@ -38,52 +65,89 @@ export function MulliganScreen() {
     [deck],
   );
 
-  function newHand() {
-    const shuffled = shuffle(flatDeck);
-    setOrder(shuffled);
-    setHand(shuffled.slice(0, HAND_SIZE));
-    setSelected(new Set());
-    setPhase("choosing");
+  /** Promote all freshly-added "in" slots to "idle" so they transition into place. */
+  function flushEntering() {
+    after(20, () => setSlots((prev) => prev.map((s) => (s.anim === "in" ? { ...s, anim: "idle" } : s))));
   }
 
-  function toggle(i: number) {
+  function newHand() {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    const shuffled = shuffle(flatDeck);
+    setOrder(shuffled);
+    setSlots(shuffled.slice(0, HAND_SIZE).map((id) => ({ key: nextKey(), id, anim: "in" as Anim })));
+    setSelected(new Set());
+    setPhase("choosing");
+    flushEntering();
+  }
+
+  function toggle(key: number) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
 
-  async function submitMulligan() {
-    const k = selected.size;
-    // Bottom selected, draw k replacements from the rest of the deck.
-    const rest = order.slice(HAND_SIZE);
-    const kept = hand.filter((_, i) => !selected.has(i));
-    const redrawn = rest.slice(0, k);
-    setHand([...kept, ...redrawn]);
-    setPhase("done");
-    if (deckId) {
-      await db.mulliganResults.add({
-        deckId,
-        onThePlay,
-        kept: HAND_SIZE - k,
-        redrew: k,
-        timestamp: Date.now(),
-      });
+  async function recordResult(redrew: number) {
+    if (!deckId) return;
+    await db.mulliganResults.add({
+      deckId,
+      onThePlay,
+      kept: HAND_SIZE - redrew,
+      redrew,
+      timestamp: Date.now(),
+    });
+  }
+
+  function submitMulligan() {
+    const selectedKeys = selected;
+    const k = selectedKeys.size;
+
+    if (k === 0) {
+      setPhase("done");
+      void recordResult(0);
+      return;
     }
+
+    setPhase("animating");
+    // 1) Animate the bottomed cards out.
+    setSlots((prev) => prev.map((s) => (selectedKeys.has(s.key) ? { ...s, anim: "out" } : s)));
+
+    // 2) After they leave, drop them and deal the redraws (entering from the top).
+    after(OUT_MS, () => {
+      const rest = order.slice(HAND_SIZE);
+      const redrawn = rest.slice(0, k).map((id) => ({ key: nextKey(), id, anim: "in" as Anim }));
+      setSlots((prev) => [...prev.filter((s) => !selectedKeys.has(s.key)), ...redrawn]);
+      setSelected(new Set());
+      flushEntering();
+      // 3) Settle to "done" once the entrance finishes.
+      after(IN_MS, () => setPhase("done"));
+    });
+    void recordResult(k);
   }
 
   if (loaded && decks.length === 0) {
     return (
       <div className="space-y-3 text-center">
         <p className="text-sm text-slate-400">You need a deck to practise mulligans.</p>
-        <button type="button" onClick={() => navigate("/decks")} className="min-h-tap rounded-xl bg-ink-sapphire px-4 font-semibold text-white">
+        <button
+          type="button"
+          onClick={() => navigate("/decks")}
+          className="min-h-tap rounded-xl bg-ink-sapphire px-4 font-semibold text-white"
+        >
           Go to Decks
         </button>
       </div>
     );
   }
+
+  const animClass: Record<Anim, string> = {
+    in: "opacity-0 -translate-y-8 scale-95",
+    idle: "opacity-100 translate-y-0 scale-100",
+    out: "opacity-0 translate-y-12 scale-90 pointer-events-none",
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -144,19 +208,25 @@ export function MulliganScreen() {
               Tap cards to bottom them, then confirm. ({selected.size} selected)
             </p>
           )}
+          {phase === "animating" && <p className="mb-2 text-sm text-slate-400">Redrawing…</p>}
           {phase === "done" && <p className="mb-2 text-sm text-emerald-300">Final hand:</p>}
+
           <div className="grid min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto">
-            {hand.map((id, i) => {
-              const card = index.get(id);
+            {slots.map((slot) => {
+              const card = index.get(slot.id);
               if (!card) return null;
-              const isSel = selected.has(i);
+              const isSel = selected.has(slot.key);
               return (
                 <button
-                  key={`${id}-${i}`}
+                  key={slot.key}
                   type="button"
-                  disabled={phase === "done"}
-                  onClick={() => toggle(i)}
-                  className={cn("relative rounded-lg", isSel && "opacity-40 ring-2 ring-rose-400")}
+                  disabled={phase !== "choosing"}
+                  onClick={() => toggle(slot.key)}
+                  className={cn(
+                    "relative rounded-lg transition-all duration-300 ease-out",
+                    animClass[slot.anim],
+                    isSel && "ring-2 ring-rose-400 brightness-50",
+                  )}
                 >
                   <CardThumb card={card} />
                   {isSel && (
