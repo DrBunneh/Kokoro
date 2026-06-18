@@ -208,6 +208,58 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].hand.some((c) => c.instanceId === handCardId)).toBe(false);
   });
 
+  it("surfaces an uncovered action's rules text as a manual prompt (not silently discarded)", () => {
+    const lookup: CardLookup = (id) =>
+      id.includes("-a") ? printed(id, { type: "action", fullName: "Mystery Action", rulesText: "Do a wild and unusual thing." }) : printed(id);
+    let g = toPlay(lookup);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, {}).state;
+    const playId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: playId }, {}).state;
+    expect(g.pendingPrompts).toHaveLength(1);
+    expect(g.pendingPrompts[0]!.kind).toBe("manual");
+    expect(g.pendingPrompts[0]!.text).toContain("Do a wild and unusual thing");
+    expect(g.pendingPrompts[0]!.sourceInstanceId).toBe(playId); // the played card, for display
+    expect(g.players[1].discard.some((c) => c.instanceId === playId)).toBe(true);
+  });
+
+  it("resolves a covered action via its name slug, stripping the sing reminder", () => {
+    const effects: CardEffects = {
+      apirateslife: [{ trigger: "on_play", steps: [{ do: "gainLore", player: "self", amount: 2 }] }],
+    };
+    const lookup: CardLookup = (id) =>
+      id.includes("-a") ? printed(id, { type: "song", fullName: "A Pirate's Life", rulesText: "Sing Together 6 (Any number of characters…) Each opponent loses 2 lore. You gain 2 lore." }) : printed(id);
+    let g = toPlay(lookup);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    expect(g.players[1].lore).toBe(2);
+  });
+
+  it("a 'may' effect prompts Yes/No and only acts on Yes (Pawpsicle Jumbo Pop)", () => {
+    const effects: CardEffects = {
+      jp: [{ trigger: "on_play", steps: [{ do: "mayConfirm", text: "draw a card?" }, { do: "draw", player: "self", amount: 1 }] }],
+    };
+    const play = () => {
+      let g = toPlay((id) => (id.includes("-a") ? printed(id, { type: "item", specialAbilities: [{ name: "Jumbo Pop", slug: "jp", effect: "When you play this item, you may draw a card." }] }) : printed(id)));
+      g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+      g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+      return g;
+    };
+    // Prompt is a Yes/No confirm.
+    let g = play();
+    expect(g.pendingPrompts).toHaveLength(1);
+    expect(g.pendingPrompts[0]!.pick).toBe("confirm");
+    const deckBefore = g.players[1].deck.length;
+    // Decline → no draw.
+    const declined = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id }, effects).state;
+    expect(declined.pendingPrompts).toHaveLength(0);
+    expect(declined.players[1].deck.length).toBe(deckBefore);
+    // Confirm → draws one.
+    const confirmed = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "__confirm__" }, effects).state;
+    expect(confirmed.pendingPrompts).toHaveLength(0);
+    expect(confirmed.players[1].deck.length).toBe(deckBefore - 1);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

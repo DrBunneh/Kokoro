@@ -460,16 +460,32 @@ function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel 
   const meP = state.players[prompt.player];
   const onBoard = [...state.players[1].field, ...state.players[2].field, ...state.players[1].items, ...state.players[2].items];
   const card = manualSel ? onBoard.find((c) => c.instanceId === manualSel) : null;
+  // The card that triggered the prompt (incl. an action now in discard), so
+  // both players can see what was played.
+  const sourceCard = prompt.sourceInstanceId
+    ? [...onBoard, ...state.players[1].discard, ...state.players[2].discard].find((c) => c.instanceId === prompt.sourceInstanceId)
+    : undefined;
+  const head = (
+    <div className="flex items-start gap-2">
+      {sourceCard && <div className="w-12 shrink-0"><CardThumb card={sourceCard.printed} /></div>}
+      <p className="text-amber-50">{prompt.text}</p>
+    </div>
+  );
   if (!mine) {
-    return <div className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-100">{state.players[prompt.player].name} is resolving: {prompt.text}</div>;
+    return <div className="space-y-1 rounded-lg bg-amber-500/10 p-2 text-xs text-amber-100"><p className="font-semibold">{state.players[prompt.player].name} is resolving:</p>{head}</div>;
   }
   const setLore = (value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setLore", player: prompt.player, value }] });
   const setDamage = (id: string, value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setDamage", instanceId: id, value }] });
   return (
     <div className="space-y-2 rounded-lg bg-amber-500/15 p-2 text-xs">
       <p className="font-semibold text-amber-100">Resolve ability:</p>
-      <p className="text-amber-50">{prompt.text}</p>
-      {prompt.resume ? (
+      {head}
+      {prompt.pick === "confirm" ? (
+        <div className="flex items-center gap-2">
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: "__confirm__" })} className="flex-1 rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Yes</button>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="flex-1 rounded bg-white/10 px-2 py-1">No</button>
+        </div>
+      ) : prompt.resume ? (
         <div className="flex items-center gap-2">
           <span className="flex-1 text-amber-200">{prompt.pick === "hand" ? "Tap a card in your hand." : "Tap a character to target."}</span>
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">{prompt.pick === "hand" ? "Skip" : "No target"}</button>

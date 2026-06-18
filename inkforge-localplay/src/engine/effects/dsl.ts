@@ -35,6 +35,8 @@ export interface TargetFilter {
 export type Step =
   // Targeting (suspends for a tap; binds the chosen instance to `as`):
   | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean; filter?: TargetFilter }
+  // Optional "may" gate — suspends for a Yes/No before the steps that follow:
+  | { do: "mayConfirm"; text?: string }
   // Choose a card from your own hand (suspends for a hand tap):
   | { do: "chooseFromHand"; as: string; text?: string; optional?: boolean }
   // Move a bound (hand) card into the inkwell / discard:
@@ -96,8 +98,8 @@ export interface Suspension {
   text?: string;
   optional: boolean;
   filter?: TargetFilter;
-  /** What the resolver picks: a character on the board, or a card from hand. */
-  pick: "character" | "hand";
+  /** What the resolver picks: a board character, a hand card, or a Yes/No. */
+  pick: "character" | "hand" | "confirm";
 }
 
 /**
@@ -269,6 +271,12 @@ export function runSteps(
         continue;
       }
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "hand" };
+    }
+    if (step.do === "mayConfirm") {
+      // A confirmed "Yes" injects a sentinel; consume it and run on. A fresh
+      // arrival suspends for the Yes/No choice.
+      if (pending != null) { pending = undefined; continue; }
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: true, pick: "confirm" };
     }
     applyStep(state, step, ctx, logs);
   }

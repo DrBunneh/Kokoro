@@ -358,15 +358,30 @@ function PromptBar({
     ...state.players[1].items, ...state.players[2].items,
   ];
   const card = manualSel ? allOnBoard.find((c) => c.instanceId === manualSel) : null;
+  // The card that triggered this prompt (incl. an action/song now in discard) —
+  // shown so both players can see what was played.
+  const sourceCard = prompt.sourceInstanceId
+    ? ([...allOnBoard, ...state.players[1].discard, ...state.players[2].discard].find((c) => c.instanceId === prompt.sourceInstanceId))
+    : undefined;
   const setLore = (value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setLore", player: me, value }] });
   const setDamage = (instanceId: string, value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setDamage", instanceId, value }] });
   const setExerted = (instanceId: string, value: boolean) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setExerted", instanceId, value }] });
 
   return (
     <div className="space-y-2 rounded-lg bg-amber-500/15 p-2 text-xs">
-      <p className="font-semibold text-amber-100">Resolve ability ({state.players[prompt.player].name}):</p>
-      <p className="text-amber-50">{prompt.text}</p>
-      {prompt.resume ? (
+      <div className="flex items-start gap-2">
+        {sourceCard && <div className="w-12 shrink-0"><CardThumb card={sourceCard.printed} /></div>}
+        <div>
+          <p className="font-semibold text-amber-100">Resolve ability ({state.players[prompt.player].name}):</p>
+          <p className="text-amber-50">{prompt.text}</p>
+        </div>
+      </div>
+      {prompt.pick === "confirm" ? (
+        <div className="flex items-center gap-2">
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: "__confirm__" })} className="flex-1 rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Yes</button>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="flex-1 rounded bg-white/10 px-2 py-1">No</button>
+        </div>
+      ) : prompt.resume ? (
         <div className="flex items-center gap-2">
           <span className="flex-1 text-amber-200">{prompt.pick === "hand" ? "Tap a card in your hand." : "Tap a character to target."}</span>
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">{prompt.pick === "hand" ? "Skip" : "No target"}</button>

@@ -550,9 +550,30 @@
       "trigger": "on_play",
       "steps": [
         {
+          "do": "mayConfirm",
+          "text": "draw a card?"
+        },
+        {
           "do": "draw",
           "player": "self",
           "amount": 1
+        }
+      ]
+    }
+  ],
+  "apirateslife": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "loseLore",
+          "player": "opponent",
+          "amount": 2
+        },
+        {
+          "do": "gainLore",
+          "player": "self",
+          "amount": 2
         }
       ]
     }

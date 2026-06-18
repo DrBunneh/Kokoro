@@ -150,6 +150,74 @@ function payInk(p: PlayerState, cost: number): void {
  * while prompts are pending.
  */
 type BanishRef = { card: CardInstance; owner: PlayerId };
+type AbilitySpec = { name: string; slug: string; effect: string };
+
+/** slugify mirrors build-card-db so effect keys line up with the seeded data. */
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Strip leading reminder text from an action/song so a surfaced prompt shows the
+ * actual instruction: drop a leading "(…)" reminder and a "Sing Together N (…)"
+ * / "Singer N (…)" prefix.
+ */
+function actionEffectText(rules: string): string {
+  let t = rules.replace(/\s+/g, " ").trim();
+  t = t.replace(/^\((?:[^()]|\([^()]*\))*\)\s*/, ""); // leading parenthetical reminder
+  t = t.replace(/^(Sing Together|Singer)\s+\d+\s*\((?:[^()]|\([^()]*\))*\)\s*/i, "");
+  return t.trim();
+}
+
+/** Resolve one ability for a trigger: run its DSL def, or surface it for Manual Mode. */
+function runAbility(
+  state: GameState,
+  sa: AbilitySpec,
+  trigger: Trigger,
+  cardType: CardInstance["printed"]["type"],
+  source: CardInstance,
+  controller: PlayerId,
+  logs: LogEntry[],
+  effects: CardEffects,
+  surfaceManual: boolean,
+  banished?: BanishRef[],
+): void {
+  const matching = (effects[sa.slug] ?? []).filter((d) => d.trigger === trigger);
+  if (matching.length > 0) {
+    for (const def of matching) {
+      const ctx: EffectContext = { controller, source, vars: {}, banished };
+      const suspension = runSteps(state, def.steps, ctx, logs);
+      if (suspension) {
+        state.pendingPrompts.push({
+          id: uid(),
+          player: controller,
+          sourceInstanceId: source.instanceId,
+          kind: sa.slug,
+          text: suspension.text ? `${sa.name}: ${suspension.text}` : `${sa.name}: ${sa.effect}`,
+          auto: false,
+          controller,
+          scope: suspension.scope,
+          pick: suspension.pick,
+          resume: { steps: suspension.steps, vars: ctx.vars },
+        });
+      } else {
+        logs.push(log({ turnNumber: state.turnNumber, player: controller, type: "ABILITY_TRIGGERED", message: `${sa.name} resolved`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
+      }
+    }
+    return;
+  }
+  // Not in the DSL — surface for Manual Mode only if it fires on THIS event.
+  if (surfaceManual && classifyTrigger(sa.effect, cardType) === trigger) {
+    state.pendingPrompts.push({
+      id: uid(),
+      player: controller,
+      sourceInstanceId: source.instanceId,
+      kind: "manual",
+      text: `${sa.name}: ${sa.effect}`,
+      auto: false,
+    });
+  }
+}
 
 function fireTrigger(
   state: GameState,
@@ -162,47 +230,17 @@ function fireTrigger(
   banished?: BanishRef[],
   onlySlug?: string,
 ): void {
-  for (const sa of source.printed.specialAbilities) {
+  const type = source.printed.type;
+  const abilities: AbilitySpec[] = [...source.printed.specialAbilities];
+  // Actions/songs carry their effect in rulesText with no named ability — treat
+  // the whole rules text as an implicit on-play ability so it fires / surfaces.
+  if (abilities.length === 0 && (type === "action" || type === "song") && source.printed.rulesText) {
+    const effect = actionEffectText(source.printed.rulesText);
+    if (effect) abilities.push({ name: source.printed.fullName, slug: slugify(source.printed.fullName), effect });
+  }
+  for (const sa of abilities) {
     if (onlySlug && sa.slug !== onlySlug) continue;
-    const defs = effects[sa.slug] ?? [];
-    const matching = defs.filter((d) => d.trigger === trigger);
-
-    if (matching.length > 0) {
-      for (const def of matching) {
-        const ctx: EffectContext = { controller, source, vars: {}, banished };
-        const suspension = runSteps(state, def.steps, ctx, logs);
-        if (suspension) {
-          state.pendingPrompts.push({
-            id: uid(),
-            player: controller,
-            sourceInstanceId: source.instanceId,
-            kind: sa.slug,
-            text: suspension.text ? `${sa.name}: ${suspension.text}` : `${sa.name}: ${sa.effect}`,
-            auto: false,
-            controller,
-            scope: suspension.scope,
-            pick: suspension.pick,
-            resume: { steps: suspension.steps, vars: ctx.vars },
-          });
-        } else {
-          logs.push(log({ turnNumber: state.turnNumber, player: controller, type: "ABILITY_TRIGGERED", message: `${sa.name} resolved`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
-        }
-      }
-      continue;
-    }
-
-    // Not in the DSL — surface for Manual Mode only if this ability actually
-    // fires on THIS event (not activated/static/other-trigger abilities).
-    if (surfaceManual && classifyTrigger(sa.effect, source.printed.type) === trigger) {
-      state.pendingPrompts.push({
-        id: uid(),
-        player: controller,
-        sourceInstanceId: source.instanceId,
-        kind: "manual",
-        text: `${sa.name}: ${sa.effect}`,
-        auto: false,
-      });
-    }
+    runAbility(state, sa, trigger, type, source, controller, logs, effects, surfaceManual, banished);
   }
 }
 
@@ -567,7 +605,10 @@ export function reduce(
           let steps = prompt.resume.steps;
           let inject = action.targetInstanceId;
           const lead = steps[0];
-          if (lead && (lead.do === "chooseCharacter" || lead.do === "chooseFromHand")) {
+          if (lead && lead.do === "mayConfirm") {
+            // Yes (a sentinel target) runs on; No (no target) aborts the effect.
+            if (action.targetInstanceId == null) steps = [];
+          } else if (lead && (lead.do === "chooseCharacter" || lead.do === "chooseFromHand")) {
             if (action.targetInstanceId != null) {
               const loc = findInstance(next, action.targetInstanceId);
               if (lead.do === "chooseCharacter") {
