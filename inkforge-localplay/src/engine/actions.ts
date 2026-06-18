@@ -40,6 +40,7 @@ export type Action =
   | { type: "ADD_TO_INK"; cardInstanceId: string }
   | { type: "PLAY_CARD"; cardInstanceId: string; shiftOnto?: string; singers?: string[] }
   | { type: "QUEST"; cardInstanceId: string }
+  | { type: "MOVE_TO_LOCATION"; characterId: string; locationId: string }
   | { type: "ACTIVATE_ABILITY"; cardInstanceId: string; slug?: string }
   | { type: "ATTACK"; attackerId: string; defenderId: string }
   | { type: "RESPOND_TO_PROMPT"; promptId: string; targetInstanceId?: string }
@@ -383,6 +384,11 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
       state.players[owner].ownToyBanishedThisTurn = true;
     }
     fireTrigger(state, "on_banish", card, owner, logs, effects, true, queue);
+    // "Whenever a character is banished while here" (The Library).
+    if (card.atLocation) {
+      const loc = state.players[owner].field.find((c) => c.instanceId === card.atLocation && c.printed.type === "location");
+      if (loc) fireLocationHere(state, loc, owner, "on_banish_here", "banished", card.instanceId, logs, effects, queue);
+    }
     // Controller-wide banish watches (Sid "double prizes", Babyhead, Emerald).
     const ev: EventCtx = { banishedCard: card, banishedOwner: owner };
     fireWatch(state, "on_other_banished", 1, logs, effects, queue, ev);
@@ -462,6 +468,41 @@ function fireWatch(
             resume: { steps: suspension.steps, vars: ctx.vars },
           });
         }
+      }
+    }
+  }
+}
+
+/**
+ * Fire a location's "while here" trigger, binding the moving/questing character
+ * as `varName` so the location effect can target it (Casa Madrigal, The Library,
+ * Seven Dwarfs' Mine).
+ */
+function fireLocationHere(
+  state: GameState,
+  location: CardInstance,
+  owner: PlayerId,
+  trigger: Trigger,
+  varName: string,
+  boundId: string,
+  logs: LogEntry[],
+  effects: CardEffects,
+  banished?: BanishRef[],
+): void {
+  for (const sa of location.printed.specialAbilities) {
+    const defs = (effects[sa.slug] ?? []).filter((d) => d.trigger === trigger);
+    for (const def of defs) {
+      if (!conditionMet(state, owner, location, def.when)) continue;
+      const ctx: EffectContext = { controller: owner, source: location, vars: { [varName]: boundId }, banished, events: makeEvents(state, logs, effects, banished) };
+      const suspension = runSteps(state, def.steps ?? [], ctx, logs);
+      if (suspension) {
+        state.pendingPrompts.push({
+          id: uid(), player: owner, sourceInstanceId: location.instanceId, kind: sa.slug,
+          text: suspension.text ? `${sa.name}: ${suspension.text}` : `${sa.name}: ${sa.effect}`,
+          auto: false, controller: owner, scope: suspension.scope, pick: suspension.pick,
+          reveal: suspension.reveal, handOwner: suspension.handOwner, modes: suspension.modes,
+          resume: { steps: suspension.steps, vars: ctx.vars },
+        });
       }
     }
   }
@@ -617,7 +658,7 @@ function checkLoreWin(state: GameState, logs: LogEntry[]): void {
   }
 }
 
-const BAG_BLOCKED = new Set(["ADD_TO_INK", "PLAY_CARD", "QUEST", "ACTIVATE_ABILITY", "ATTACK", "END_TURN"]);
+const BAG_BLOCKED = new Set(["ADD_TO_INK", "PLAY_CARD", "QUEST", "MOVE_TO_LOCATION", "ACTIVATE_ABILITY", "ATTACK", "END_TURN"]);
 
 /** Pure rules reducer. Returns the next state and logs; throws on illegal actions. */
 export function reduce(
@@ -836,6 +877,11 @@ export function reduce(
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
       fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, true, banished);
+      // "Whenever a character quests while here" (Casa Madrigal).
+      if (card.atLocation) {
+        const loc = next.players[next.currentPlayer].field.find((c) => c.instanceId === card.atLocation && c.printed.type === "location");
+        if (loc) fireLocationHere(next, loc, next.currentPlayer, "on_quest_here", "quester", card.instanceId, logs, effects, banished);
+      }
       // Support (rules §10.13): add this character's {S} to another chosen one.
       if (hasKeyword(next, card, "Support")) {
         const amount = effectiveStrength(next, card);
@@ -863,6 +909,27 @@ export function reduce(
           });
         }
       }
+      drainBanish(next, banished, logs, effects);
+      return { state: next, logs };
+    }
+
+    case "MOVE_TO_LOCATION": {
+      if (next.status !== "playing") throw new GameError("Not in play");
+      const p = next.players[next.currentPlayer];
+      const mover = p.field.find((c) => c.instanceId === action.characterId);
+      const location = p.field.find((c) => c.instanceId === action.locationId);
+      if (!mover || mover.printed.type !== "character") throw new GameError("Not a character in play");
+      if (!location || location.printed.type !== "location") throw new GameError("Not a location in play");
+      if (mover.atLocation === location.instanceId) throw new GameError("Already at that location");
+      const moveCost = location.printed.moveCost ?? 0;
+      if (readyInk(p).length < moveCost) throw new GameError("Not enough ink to move");
+      payInk(p, moveCost);
+      const firstHere = !p.field.some((c) => c.printed.type === "character" && c.atLocation === location.instanceId);
+      mover.atLocation = location.instanceId;
+      logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${mover.printed.fullName} moved to ${location.printed.fullName}`, cardRefs: [{ id: mover.printed.id, name: mover.printed.fullName }] }));
+      // "First time you move a character here this turn" — approximate via no other
+      // character currently here (Seven Dwarfs' Mine).
+      if (firstHere) fireLocationHere(next, location, next.currentPlayer, "on_move_here", "mover", mover.instanceId, logs, effects, banished);
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }

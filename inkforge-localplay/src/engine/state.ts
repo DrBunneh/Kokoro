@@ -49,6 +49,8 @@ export interface CardInstance {
   damageShieldedThisTurn?: boolean;
   /** May challenge ready (unexerted) characters this turn (Cinderella - Stouthearted). */
   challengeReadyThisTurn?: boolean;
+  /** The location (instanceId) this character is currently at, if any. */
+  atLocation?: string;
 }
 
 /** A turn-scoped "pay N less for the next matching play" discount. */

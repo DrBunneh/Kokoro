@@ -1578,6 +1578,27 @@
   "forebodingglance": [
     { "trigger": "on_quest", "steps": [{ "do": "lookAtTop", "count": 0, "countFromUnder": true, "keepUpTo": 1, "rest": "bottom" }] }
   ],
+  "healinghome": [
+    { "trigger": "on_quest_here", "steps": [
+      { "do": "removeDamage", "to": "quester", "amount": 2 },
+      { "do": "mayConfirm", "text": "remove up to 2 damage from another character?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "remove 2 damage" },
+      { "do": "removeDamage", "to": "t", "amount": 2 }
+    ] }
+  ],
+  "lostinabook": [
+    { "trigger": "on_banish_here", "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "mountaindefense": [
+    { "trigger": "on_move_here", "steps": [
+      { "do": "mayConfirm", "text": "deal 1 damage to a chosen character?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "deal 1 damage" },
+      { "do": "dealDamage", "to": "t", "amount": 1 }
+    ] }
+  ],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],

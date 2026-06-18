@@ -327,6 +327,9 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
           {charAbility && (
             <button onClick={() => { dispatch({ type: "ACTIVATE_ABILITY", cardInstanceId: selectedChar.instanceId, slug: charAbility.slug }); setSelField(null); }} className="min-h-tap flex-1 rounded-lg bg-ink-amethyst/40 text-xs text-violet-100" title={charAbility.effect}>⚡ {charAbility.name}</button>
           )}
+          {meP.field.filter((c) => c.printed.type === "location" && c.instanceId !== selectedChar.atLocation).map((loc) => (
+            <button key={loc.instanceId} disabled={ink < (loc.printed.moveCost ?? 0)} onClick={() => { dispatch({ type: "MOVE_TO_LOCATION", characterId: selectedChar.instanceId, locationId: loc.instanceId }); setSelField(null); }} className="min-h-tap flex-1 rounded-lg bg-teal-500/30 text-xs text-teal-100 disabled:opacity-30" title={`Move to ${loc.printed.fullName}`}>→ {loc.printed.title ?? "location"} ({loc.printed.moveCost ?? 0})</button>
+          ))}
         </div>
       )}
       {!prompt && selectedItem && itemAbility && (

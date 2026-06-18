@@ -35,6 +35,25 @@ describe("Wave 9 — locations & challenge-ready", () => {
     expect(g.players[1].lore).toBe(before + 2);
   });
 
+  it("MOVE_TO_LOCATION pays move cost, marks the character here, and fires on_move_here", () => {
+    const effects = {
+      mtn: [{ trigger: "on_move_here" as const, steps: [{ do: "gainLore" as const, player: "self" as const, amount: 1 }] }],
+    };
+    let g = toPlay((id) => printed(id));
+    // A location with moveCost 1 + a ready character, plus one ready ink.
+    g.players[1].field.push({
+      instanceId: "loc", printed: printed("loc", { type: "location", lore: 0, willpower: 5, moveCost: 1, specialAbilities: [{ name: "Mtn", slug: "mtn", effect: "First time you move a character here, gain 1 lore." }] }),
+      damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [],
+    });
+    const char = g.players[1].hand.shift()!; char.justPlayed = false;
+    g.players[1].field.push(char);
+    const ink = g.players[1].hand.pop()!; ink.exerted = false; g.players[1].inkwell.push(ink);
+    g = reduce(g, { type: "MOVE_TO_LOCATION", characterId: char.instanceId, locationId: "loc" }, effects).state;
+    expect(g.players[1].field.find((c) => c.instanceId === char.instanceId)!.atLocation).toBe("loc");
+    expect(g.players[1].inkwell.filter((c) => c.exerted)).toHaveLength(1); // paid 1
+    expect(g.players[1].lore).toBe(1); // on_move_here fired
+  });
+
   it("Cinderella 'singing sword': the attacker may challenge a ready (unexerted) character", () => {
     const effects = { sword: [{ trigger: "on_play_song" as const, steps: [{ do: "grantChallengeReady" as const, to: "self" }] }] };
     let g = toPlay((id) => printed(id));

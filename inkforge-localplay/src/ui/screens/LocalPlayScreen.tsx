@@ -401,6 +401,9 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
           <button disabled={selChar.exerted || selChar.justPlayed} onClick={() => { act({ type: "QUEST", cardInstanceId: selChar.instanceId }); setSelField(null); }} className="min-h-tap flex-1 rounded bg-white/10 text-xs disabled:opacity-30">Quest</button>
           <button disabled={selChar.exerted || (selChar.justPlayed && !hasKeyword(s, selChar, "Rush"))} onClick={() => { setAttacker(selChar.instanceId); setSelField(null); }} className="min-h-tap flex-1 rounded bg-amber-500/30 text-xs text-amber-100 disabled:opacity-30">Challenge</button>
           {charAbility && <button onClick={() => { act({ type: "ACTIVATE_ABILITY", cardInstanceId: selChar.instanceId, slug: charAbility.slug }); setSelField(null); }} className="min-h-tap flex-1 rounded bg-ink-amethyst/40 text-xs text-violet-100" title={charAbility.effect}>⚡ {charAbility.name}</button>}
+          {me.field.filter((c) => c.printed.type === "location" && c.instanceId !== selChar.atLocation).map((loc) => (
+            <button key={loc.instanceId} disabled={readyInk < (loc.printed.moveCost ?? 0)} onClick={() => { act({ type: "MOVE_TO_LOCATION", characterId: selChar.instanceId, locationId: loc.instanceId }); setSelField(null); }} className="min-h-tap flex-1 rounded bg-teal-500/30 text-xs text-teal-100 disabled:opacity-30" title={`Move to ${loc.printed.fullName}`}>→ {loc.printed.title ?? "loc"} ({loc.printed.moveCost ?? 0})</button>
+          ))}
         </div>
       )}
       {!prompt && selectedItem && itemAbility && myTurn && (

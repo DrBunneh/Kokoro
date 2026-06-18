@@ -33,6 +33,9 @@ export type Trigger =
   | "on_opponent_draw" // whenever an opponent draws on their turn (your field watches)
   | "on_opponent_discard" // whenever an opponent discards a card (your field watches)
   | "on_put_under" // whenever a card is put under this character (Boost / Shift)
+  | "on_move_here" // a character was moved to this location (binds `mover`)
+  | "on_quest_here" // a character quested while at this location (binds `quester`)
+  | "on_banish_here" // a character was banished while at this location
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
