@@ -187,6 +187,33 @@ function readyInk(p: GameState["players"][PlayerId]): number {
   return p.inkwell.filter((c) => !c.exerted).length;
 }
 
+/**
+ * Inkwell as a shared card pool. Freshly-inked cards (justPlayed) are face-up
+ * to both players until the end of the turn they're played; then card backs.
+ */
+function InkPool({ player, mine }: { player: GameState["players"][PlayerId]; mine?: boolean }) {
+  const ink = player.inkwell;
+  return (
+    <div className="flex items-center justify-center gap-0.5">
+      <span className="mr-1 w-16 shrink-0 text-right text-[10px] text-slate-500">
+        {mine ? "your" : "their"} ink {ink.filter((c) => !c.exerted).length}/{ink.length}
+      </span>
+      <div className="flex flex-wrap items-center gap-0.5">
+        {ink.length === 0 && <span className="text-[10px] text-slate-600">—</span>}
+        {ink.map((c) => (
+          <div key={c.instanceId} className={cn("h-9 w-6 overflow-hidden rounded-sm border border-white/15", c.exerted && "rotate-12 opacity-40")}>
+            {c.justPlayed ? (
+              <CardThumb card={c.printed} className="h-full w-full rounded-none" />
+            ) : (
+              <div className="h-full w-full bg-gradient-to-br from-indigo-700 to-slate-900" />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }) {
   const dispatch = useGame((s) => s.dispatch);
   const undo = useGame((s) => s.undo);
@@ -251,8 +278,13 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
       </div>
       <FieldRow cards={oppP.field} enemy mode={attacker || prompt ? "target" : "none"} onCardTap={(c) => { if (promptTap(c.instanceId)) return; if (attacker) { dispatch({ type: "ATTACK", attackerId: attacker, defenderId: c.instanceId }); setAttacker(null); } }} />
 
+      {/* Inkwell pool fills the gap between the two fields. */}
+      <div className="flex flex-1 flex-col justify-center gap-1">
+        <InkPool player={oppP} />
+        <InkPool player={meP} mine />
+      </div>
+
       {/* My field */}
-      <div className="mt-auto" />
       <FieldRow
         cards={meP.field}
         mode={attacker ? "attacking" : "mine"}

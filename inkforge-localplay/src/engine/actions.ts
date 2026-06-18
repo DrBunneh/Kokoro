@@ -310,6 +310,7 @@ export function reduce(
       if (!card.printed.inkable) throw new GameError("Card is not inkable");
       p.hand.splice(idx, 1);
       card.exerted = false;
+      card.justPlayed = true; // shown face-up in the inkwell until end of this turn
       p.inkwell.push(card);
       next.hasInkedThisTurn = true;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PUT_INTO_INKWELL", message: `${p.name} inked ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
@@ -539,6 +540,8 @@ export function reduce(
           c.appliedEffects = c.appliedEffects.filter((e) => e.duration !== "end_of_turn");
         }
       }
+      // Freshly-inked cards flip to face-down at the end of the turn they were played.
+      for (const c of next.players[ending].inkwell) c.justPlayed = false;
       logs.push(log({ turnNumber: next.turnNumber, player: ending, type: "TURN_END", message: `${next.players[ending].name} ends turn` }));
       next.turnNumber += 1;
       startTurn(next, otherPlayer(ending), logs, false);
