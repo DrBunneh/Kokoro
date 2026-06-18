@@ -1,4 +1,156 @@
 {
+  "tasteslikechicken": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove 1 damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "castmyspell": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "disappear": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "return chosen character to hand"
+        },
+        {
+          "do": "returnToHand",
+          "to": "t"
+        }
+      ]
+    },
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "return chosen character to hand"
+        },
+        {
+          "do": "returnToHand",
+          "to": "t"
+        }
+      ]
+    }
+  ],
+  "improvise": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "loseLore",
+          "player": "opponent",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "dragonfire": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "banish chosen character"
+        },
+        {
+          "do": "banish",
+          "to": "t"
+        }
+      ]
+    },
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "banish chosen character"
+        },
+        {
+          "do": "banish",
+          "to": "t"
+        }
+      ]
+    }
+  ],
+  "tangle": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "loseLore",
+          "player": "opponent",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "loseLore",
+          "player": "opponent",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "iwonthurtyou": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove 2 damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    }
+  ],
   "yourenotwelcomehere": [
     {
       "trigger": "on_play",
@@ -7,12 +159,46 @@
           "do": "chooseCharacter",
           "as": "t",
           "scope": "any",
-          "text": "deal 1 damage to chosen character",
-          "optional": true
+          "optional": true,
+          "text": "deal 1 damage to chosen character"
         },
         {
           "do": "dealDamage",
           "to": "t",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "darkknowledge": [
+    {
+      "trigger": "on_quest",
+      "steps": [
+        {
+          "do": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "trigger": "on_quest",
+      "steps": [
+        {
+          "do": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "plunder": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "loseLore",
+          "player": "opponent",
           "amount": 1
         }
       ]
@@ -26,8 +212,8 @@
           "do": "chooseCharacter",
           "as": "t",
           "scope": "any",
-          "text": "remove 2 damage from chosen character",
-          "optional": true
+          "optional": false,
+          "text": "remove 2 damage from chosen character"
         },
         {
           "do": "removeDamage",
@@ -45,13 +231,32 @@
           "do": "chooseCharacter",
           "as": "t",
           "scope": "any",
-          "text": "deal 2 damage to chosen character",
-          "optional": true
+          "optional": true,
+          "text": "deal 2 damage to chosen character"
         },
         {
           "do": "dealDamage",
           "to": "t",
           "amount": 2
+        }
+      ]
+    }
+  ],
+  "bemorecareful": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove 1 damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 1
         }
       ]
     }
@@ -102,6 +307,43 @@
       ]
     }
   ],
+  "incapacitate": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "return chosen character to hand"
+        },
+        {
+          "do": "returnToHand",
+          "to": "t"
+        }
+      ]
+    }
+  ],
+  "letmehelp": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove 1 damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 1
+        }
+      ]
+    }
+  ],
   "letmeatem": [
     {
       "trigger": "on_play",
@@ -110,13 +352,140 @@
           "do": "chooseCharacter",
           "as": "t",
           "scope": "any",
-          "text": "deal 1 damage to chosen character",
-          "optional": true
+          "optional": true,
+          "text": "deal 1 damage to chosen character"
         },
         {
           "do": "dealDamage",
           "to": "t",
           "amount": 1
+        }
+      ]
+    }
+  ],
+  "ijustliketoblowthingsup": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "deal 3 damage to chosen character"
+        },
+        {
+          "do": "dealDamage",
+          "to": "t",
+          "amount": 3
+        }
+      ]
+    }
+  ],
+  "happyday": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove 2 damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "closerlook": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "iamhelping": [
+    {
+      "trigger": "on_quest",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove all damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 99
+        }
+      ]
+    }
+  ],
+  "snowysurprise": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": false,
+          "text": "deal 2 damage to chosen character"
+        },
+        {
+          "do": "dealDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    },
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": false,
+          "text": "deal 2 damage to chosen character"
+        },
+        {
+          "do": "dealDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "chaoticcollision": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "loseLore",
+          "player": "opponent",
+          "amount": 2
         }
       ]
     }
@@ -129,13 +498,49 @@
           "do": "chooseCharacter",
           "as": "t",
           "scope": "any",
-          "text": "remove 2 damage from chosen character",
-          "optional": true
+          "optional": false,
+          "text": "remove 2 damage from chosen character"
         },
         {
           "do": "removeDamage",
           "to": "t",
           "amount": 2
+        }
+      ]
+    }
+  ],
+  "youllbeokay": [
+    {
+      "trigger": "on_quest",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove all damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 99
+        }
+      ]
+    },
+    {
+      "trigger": "on_quest",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove all damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 99
         }
       ]
     }
