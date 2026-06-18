@@ -687,6 +687,13 @@ export function reduce(
       if (card.printed.type === "action" || card.printed.type === "song") fireForController(next, "on_play_action", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "song") fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "character") fireForController(next, "on_play_character", next.currentPlayer, logs, effects, banished, card.instanceId);
+      if (card.printed.type === "item") {
+        // Item watchers (e.g. Maurice's Workshop) sit in the items zone, not the field.
+        for (const w of [...next.players[next.currentPlayer].field, ...next.players[next.currentPlayer].items]) {
+          if (w.instanceId === card.instanceId) continue;
+          fireTrigger(next, "on_play_item", w, next.currentPlayer, logs, effects, true, banished);
+        }
+      }
       // "Whenever you pay 2 {I} or less to play a card" (Jessie, Buzz, Babyhead) —
       // the card being played doesn't see its own entry.
       if (cost <= 2) fireForController(next, "on_play_cheap", next.currentPlayer, logs, effects, banished, card.instanceId);

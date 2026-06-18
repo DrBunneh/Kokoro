@@ -23,6 +23,7 @@ export type Trigger =
   | "on_play_action" // whenever you play an action/song (for your other cards)
   | "on_play_song" // whenever you play a song specifically
   | "on_play_character" // whenever you play a character (for your other cards)
+  | "on_play_item" // whenever you play an item (for your other cards)
   | "on_play_cheap" // whenever you pay 2 {I} or less to play a card (for your other cards)
   | "on_challenge_banish" // when this character banishes another in a challenge
   | "on_item_banished" // whenever an item is banished, during your turn

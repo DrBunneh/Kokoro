@@ -145,7 +145,13 @@ scheduled last.
   onlyOpponentTurn; ~25 more cards wired. Behavioral flag slugs
   (stonebyday/spikesuit) marked covered.
 
-Running total for this batch: **DONE 184, PARTIAL 25, TODO 49.**
+- **Waves 5c–5e** built: targetHasKeyword statics (Peter Pan), buffBySourceStat
+  (Zipper), tiered end-of-turn (Maximus), on_ally_challenged with pre-bound
+  `challenger` (Tiana, Merida-Gifted), name-filtered discard return (Merida-
+  Formidable), on_play_item trigger covering item watchers (Maurice's Workshop),
+  plus activated buffs (Medallion Weights, Ice Block).
+
+Running total for this batch: **DONE 198, PARTIAL 27, TODO 33.**
 
 ### Still TODO (need structural work — Wave 5b/5c)
 - **Cards-under (Shift stack)**: increasingwisdom, superhumanstrength,

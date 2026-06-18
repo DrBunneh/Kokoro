@@ -1469,5 +1469,17 @@
       { "do": "dealDamage", "to": "challenger", "amount": 1 }
     ] }
   ],
+  "lookingforthis": [
+    { "trigger": "on_play_item", "steps": [
+      { "do": "mayConfirm", "text": "pay 1 {I}: draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "disciplineandstrength": [
+    { "trigger": "activated", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "text": "+2 {S} this turn" },
+      { "do": "buff", "to": "t", "strength": 2, "duration": "end_of_turn" }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }
