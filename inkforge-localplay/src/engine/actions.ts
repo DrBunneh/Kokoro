@@ -576,8 +576,10 @@ export function reduce(
         throw new GameError("Must challenge a character with Bodyguard");
       }
 
-      // Declaration: the attacker exerts.
+      // Declaration: the attacker exerts, then any "whenever this challenges"
+      // ability goes on the bag.
       attacker.exerted = true;
+      fireTrigger(next, "on_challenge", attacker, next.currentPlayer, logs, effects, true, banished);
 
       // Challenge damage (simultaneous), with Challenger +N and Resist applied.
       const atkStrength = effectiveStrength(attacker) + keywordValue(attacker, "Challenger");
