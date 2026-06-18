@@ -419,6 +419,12 @@ function PromptBar({
             ))}
           </div>
         </div>
+      ) : prompt.pick === "mode" ? (
+        <div className="flex flex-col gap-1">
+          {(prompt.modes ?? []).map((label, k) => (
+            <button key={k} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: String(k) })} className="rounded bg-ink-sapphire px-2 py-1 text-left font-semibold text-white">{label}</button>
+          ))}
+        </div>
       ) : prompt.pick === "confirm" ? (
         <div className="flex items-center gap-2">
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: "__confirm__" })} className="flex-1 rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Yes</button>

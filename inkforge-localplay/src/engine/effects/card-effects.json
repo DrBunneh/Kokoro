@@ -910,5 +910,14 @@
       { "do": "dealDamage", "to": "t", "amount": 4 }
     ] }
   ],
+  "pullthelever": [
+    { "trigger": "on_play", "steps": [{ "do": "modal", "options": [
+      { "label": "Draw 2 cards", "steps": [{ "do": "draw", "player": "self", "amount": 2 }] },
+      { "label": "Each opponent discards a card", "steps": [{ "do": "opponentDiscard", "amount": 1 }] }
+    ] }] }
+  ],
+  "underthesea": [
+    { "trigger": "on_play", "steps": [{ "do": "toBottomAll", "scope": "enemy", "maxStrength": 2 }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

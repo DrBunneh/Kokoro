@@ -8,7 +8,7 @@
 import { otherPlayer, type CardInstance, type GameState, type PlayerId } from "../state";
 import { makeLog, type LogEntry } from "../replay";
 import { banishCard, drawCards, findInstance } from "../zones";
-import { effectiveWillpower } from "../keywords";
+import { effectiveStrength, effectiveWillpower } from "../keywords";
 import { Rng } from "../rng";
 import { uid } from "@/lib/id";
 import type { CardType } from "@/data/card-types";
@@ -67,6 +67,10 @@ export type Step =
   | { do: "lookAtTop"; count: number; rest?: "bottom" | "inkwellExerted"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
   // Banish every character (Be Prepared) — or a scoped subset.
   | { do: "banishAll"; scope?: Scope }
+  // Put every matching character in scope on the bottom of their deck (Under the Sea).
+  | { do: "toBottomAll"; scope?: Scope; maxStrength?: number }
+  // "Choose one" of several sub-effects (Pull the Lever / Wrong Lever).
+  | { do: "modal"; options: { label: string; steps: Step[] }[] }
   // "Pay N less for the next matching card you play this turn."
   | { do: "grantDiscount"; amount: number; cardType?: CardType; subtypes?: string[]; uses?: number }
   // Choose a card from a hand (your own, or an opponent's revealed hand):
@@ -159,11 +163,13 @@ export interface Suspension {
   optional: boolean;
   filter?: TargetFilter;
   /** What the resolver picks. */
-  pick: "character" | "hand" | "confirm" | "deck" | "item" | "discard";
-  /** For pick === "deck": the revealed card instanceIds to show face-up. */
+  pick: "character" | "hand" | "confirm" | "deck" | "item" | "discard" | "mode";
+  /** For pick === "deck"/"discard": the revealed card instanceIds to show face-up. */
   reveal?: string[];
   /** For pick === "hand": whose hand to choose from. */
   handOwner?: PlayerId;
+  /** For pick === "mode": the option labels to choose between. */
+  modes?: string[];
 }
 
 /** Does a hand card satisfy a chooseFromHand step's type filter? */
@@ -379,6 +385,19 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       state.players[ctx.controller].extraInk += step.amount ?? 1;
       break;
     }
+    case "toBottomAll": {
+      for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) {
+        if (step.maxStrength != null && effectiveStrength(t) > step.maxStrength) continue;
+        const loc = findInstance(state, t.instanceId);
+        if (!loc) continue;
+        const arr = state.players[loc.owner][loc.zone];
+        const i = arr.indexOf(t);
+        if (i >= 0) arr.splice(i, 1);
+        t.damage = 0; t.exerted = false; t.justPlayed = false; t.appliedEffects = [];
+        state.players[loc.owner].deck.push(t);
+      }
+      break;
+    }
     case "toInkwell": {
       const t = resolveTarget(state, ctx, step.from);
       const loc = t && findInstance(state, t.instanceId);
@@ -509,6 +528,16 @@ export function runSteps(
       }
       const handOwner = step.from === "opponent" ? otherPlayer(ctx.controller) : ctx.controller;
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "hand", handOwner };
+    }
+    if (step.do === "modal") {
+      if (pending != null) {
+        const branch = step.options[parseInt(pending, 10)]?.steps ?? [];
+        pending = undefined;
+        const susp = runSteps(state, branch, ctx, logs);
+        if (susp) return susp; // the chosen branch needs its own choice
+        continue;
+      }
+      return { steps: steps.slice(i), scope: "any", optional: false, pick: "mode", modes: step.options.map((o) => o.label) };
     }
     if (step.do === "chooseItem") {
       if (pending != null) { ctx.vars[step.as] = pending; pending = undefined; continue; }

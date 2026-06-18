@@ -222,6 +222,7 @@ function runAbility(
           pick: suspension.pick,
           reveal: suspension.reveal,
           handOwner: suspension.handOwner,
+          modes: suspension.modes,
           resume: { steps: suspension.steps, vars: ctx.vars },
         });
       } else {
@@ -549,6 +550,7 @@ export function reduce(
             pick: suspension.pick,
             reveal: suspension.reveal,
             handOwner: suspension.handOwner,
+          modes: suspension.modes,
             resume: { steps: suspension.steps, vars: ctx.vars },
           });
         }
@@ -649,6 +651,10 @@ export function reduce(
           if (lead && lead.do === "mayConfirm") {
             // Yes (a sentinel target) runs on; No (no target) aborts the effect.
             if (action.targetInstanceId == null) steps = [];
+          } else if (lead && lead.do === "modal") {
+            // The chosen option index arrives as the "target"; default to the first.
+            const idx = action.targetInstanceId != null ? parseInt(action.targetInstanceId, 10) : 0;
+            inject = String(Number.isFinite(idx) && idx >= 0 && idx < lead.options.length ? idx : 0);
           } else if (lead && lead.do === "lookAtTop") {
             const pd = next.players[prompt.controller].deck;
             const kept = parseInt(prompt.resume.vars["__scryKept"] ?? "0", 10);
@@ -723,6 +729,7 @@ export function reduce(
               pick: again.pick,
               reveal: again.reveal,
               handOwner: again.handOwner,
+              modes: again.modes,
               resume: { steps: again.steps, vars: ctx.vars },
             });
           }

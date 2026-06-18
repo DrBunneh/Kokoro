@@ -96,11 +96,13 @@ export interface Prompt {
   /** Allowed target scope for the pending choice (UI hint). */
   scope?: Scope;
   /** What the resolver picks. */
-  pick?: "character" | "hand" | "confirm" | "deck" | "item" | "discard";
+  pick?: "character" | "hand" | "confirm" | "deck" | "item" | "discard" | "mode";
   /** For pick === "deck"/"discard": the revealed card instanceIds to show face-up. */
   reveal?: string[];
   /** For pick === "hand": whose hand to choose from (self or an opponent's). */
   handOwner?: PlayerId;
+  /** For pick === "mode": the option labels to choose between. */
+  modes?: string[];
 }
 
 export interface GameState {

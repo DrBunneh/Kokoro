@@ -552,6 +552,37 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].extraInk).toBe(0);
   });
 
+  it("modal 'choose one' runs the picked branch", () => {
+    const effects: CardEffects = {
+      lever: [{ trigger: "on_play", steps: [{ do: "modal", options: [
+        { label: "Draw 2", steps: [{ do: "draw", player: "self", amount: 2 }] },
+        { label: "Opp discards", steps: [{ do: "opponentDiscard", amount: 1 }] },
+      ] }] }],
+    };
+    let g = toPlay(lookupP1Ability("Lever", "lever", "Choose one."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts[0]!.pick).toBe("mode");
+    expect(g.pendingPrompts[0]!.modes).toEqual(["Draw 2", "Opp discards"]);
+    const deckBefore = g.players[1].deck.length;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "0" }, effects).state;
+    expect(g.players[1].deck.length).toBe(deckBefore - 2); // drew 2
+    expect(g.pendingPrompts).toHaveLength(0);
+  });
+
+  it("toBottomAll bottoms all matching enemy characters (Under the Sea)", () => {
+    const effects: CardEffects = { wave: [{ trigger: "on_play", steps: [{ do: "toBottomAll", scope: "enemy", maxStrength: 2 }] }] };
+    let g = toPlay(lookupP1Ability("Wave", "wave", "Bottom all opposing with 2 strength or less."));
+    const weak = { instanceId: "w", printed: printed("w", { strength: 1 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    const big = { instanceId: "b", printed: printed("b", { strength: 5 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[2].field.push(weak, big);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.players[2].field.some((c) => c.instanceId === "w")).toBe(false);
+    expect(g.players[2].deck.some((c) => c.instanceId === "w")).toBe(true);
+    expect(g.players[2].field.some((c) => c.instanceId === "b")).toBe(true); // 5 str stays
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
