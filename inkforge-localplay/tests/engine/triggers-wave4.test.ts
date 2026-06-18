@@ -39,6 +39,30 @@ describe("Wave 4 — new triggers", () => {
     expect(g.players[1].lore).toBe(1);
   });
 
+  it("on_ally_challenged: an exerted watcher debuffs the challenging attacker", () => {
+    const effects: CardEffects = {
+      tiana: [{ trigger: "on_ally_challenged", when: { selfExerted: true }, steps: [{ do: "debuff", to: "challenger", strength: 3, duration: "end_of_turn" }] }],
+    };
+    const lookup: CardLookup = (id) =>
+      id.includes("-a")
+        ? printed(id, { strength: 4, willpower: 4, specialAbilities: [{ name: "Tiana", slug: "tiana", effect: "Whenever a character of yours is challenged while this character is exerted, the challenging character gets -3 {S} this turn." }] })
+        : printed(id, { strength: 4, willpower: 6 });
+    let g = toPlay(lookup);
+    // P2 is the defender's controller: place an exerted watcher + an exerted defender.
+    const watcher = g.players[1].hand.shift()!; watcher.exerted = true; watcher.justPlayed = false;
+    const defender = g.players[1].hand.shift()!; defender.exerted = true; defender.justPlayed = false;
+    g.players[1].field.push(watcher, defender);
+    // P2 (current player after we flip) attacks. Simplest: make P1 current and attack P2…
+    // Instead, set P2 as attacker's owner.
+    const attacker = g.players[2].hand.shift()!; attacker.exerted = false; attacker.justPlayed = false;
+    g.players[2].field.push(attacker);
+    g.currentPlayer = 2;
+    g = reduce(g, { type: "ATTACK", attackerId: attacker.instanceId, defenderId: defender.instanceId }, effects).state;
+    // Watcher (exerted, P1) debuffs the attacker by 3 → its applied effect is present.
+    const atkNow = g.players[2].field.find((c) => c.instanceId === attacker.instanceId)!;
+    expect(atkNow.appliedEffects.some((e) => e.strength === -3)).toBe(true);
+  });
+
   it("on_challenge_banish fires for the attacker when it banishes the defender", () => {
     const effects: CardEffects = { winner: [{ trigger: "on_challenge_banish", steps: [{ do: "gainLore", player: "self", amount: 2 }] }] };
     const lookup: CardLookup = (id) =>

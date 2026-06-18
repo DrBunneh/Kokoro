@@ -19,6 +19,7 @@ export type Trigger =
   | "on_challenge"
   | "on_banish"
   | "on_challenged" // when THIS character is challenged
+  | "on_ally_challenged" // when one of your characters is challenged (binds `challenger`)
   | "on_play_action" // whenever you play an action/song (for your other cards)
   | "on_play_song" // whenever you play a song specifically
   | "on_play_character" // whenever you play a character (for your other cards)
@@ -45,6 +46,8 @@ export interface Condition {
   selfUndamaged?: boolean;
   /** The source character has damage on it. */
   selfDamaged?: boolean;
+  /** The source character is exerted (Tiana, Merida — "while this character is exerted"). */
+  selfExerted?: boolean;
   /** You have at least N exerted characters in play. */
   exertedAlliesAtLeast?: number;
   /** You have a character with this name in play. */
@@ -173,7 +176,7 @@ export type Step =
   // Choose an item in play (suspends), then act on it (banish):
   | { do: "chooseItem"; as: string; scope?: Scope; text?: string; optional?: boolean }
   // Return card(s) from your discard to hand (suspends on a discard picker):
-  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; keepUpTo?: number; optional?: boolean; text?: string }
+  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; keepUpTo?: number; optional?: boolean; text?: string }
   // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
   | { do: "discardHandDraw"; player?: Who; draw: number }
   // Opponent discards `amount` random cards:
@@ -743,7 +746,7 @@ export function runSteps(
     }
     if (step.do === "returnFromDiscard") {
       const p = state.players[ctx.controller];
-      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (step.maxCost == null || c.printed.cost <= step.maxCost);
+      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (step.maxCost == null || c.printed.cost <= step.maxCost) && (!step.cardName || c.printed.name.toLowerCase() === step.cardName.toLowerCase() || c.printed.fullName.toLowerCase() === step.cardName.toLowerCase());
       const keepUpTo = step.keepUpTo ?? 1;
       const nsK = "__rfdKept";
       if (pending != null) {

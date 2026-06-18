@@ -1455,5 +1455,19 @@
     { "trigger": "end_of_turn", "when": { "haveCharStrengthAtLeast": 10 }, "steps": [{ "do": "gainLore", "player": "self", "amount": 5 }] },
     { "trigger": "end_of_turn", "when": { "haveCharStrengthAtLeast": 5, "lacksCharStrengthAtLeast": 10 }, "steps": [{ "do": "gainLore", "player": "self", "amount": 2 }] }
   ],
+  "fullquiver": [
+    { "trigger": "on_play", "steps": [{ "do": "returnFromDiscard", "cardName": "Three Arrows", "keepUpTo": 1, "optional": true, "text": "return Three Arrows from your discard" }] }
+  ],
+  "specialreservation": [
+    { "trigger": "on_ally_challenged", "when": { "selfExerted": true }, "steps": [
+      { "do": "debuff", "to": "challenger", "strength": 3, "duration": "end_of_turn" }
+    ] }
+  ],
+  "fierceprotection": [
+    { "trigger": "on_ally_challenged", "when": { "selfExerted": true }, "steps": [
+      { "do": "mayConfirm", "text": "deal 1 damage to the challenging character?" },
+      { "do": "dealDamage", "to": "challenger", "amount": 1 }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

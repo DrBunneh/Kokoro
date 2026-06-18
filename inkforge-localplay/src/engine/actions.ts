@@ -228,6 +228,7 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.discardedAtLeast != null && (p.discardedThisTurn ?? 0) < when.discardedAtLeast) return false;
   if (when.selfUndamaged && source.damage > 0) return false;
   if (when.selfDamaged && source.damage <= 0) return false;
+  if (when.selfExerted && !source.exerted) return false;
   if (when.exertedAlliesAtLeast != null && p.field.filter((c) => c.printed.type === "character" && c.exerted).length < when.exertedAlliesAtLeast) return false;
   if (when.haveCharacterNamed) {
     const want = when.haveCharacterNamed.toLowerCase();
@@ -363,6 +364,42 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
 /** Record a card a player played this turn (for "if you played a …" gates). */
 function recordPlay(p: PlayerState, card: CardInstance): void {
   (p.playedThisTurn ??= []).push({ type: card.printed.type, subtypes: card.printed.subtypes ?? [], name: card.printed.name });
+}
+
+/**
+ * Fire `on_ally_challenged` for each of `owner`'s characters when one of their
+ * characters is challenged, pre-binding the attacker as the `challenger` var so
+ * effects can target it (Tiana, Merida - Gifted Archer).
+ */
+function fireAllyChallenged(
+  state: GameState,
+  owner: PlayerId,
+  attacker: CardInstance,
+  defenderId: string,
+  logs: LogEntry[],
+  effects: CardEffects,
+  banished?: BanishRef[],
+): void {
+  for (const c of [...state.players[owner].field]) {
+    if (c.printed.type !== "character" || c.instanceId === defenderId) continue;
+    for (const sa of c.printed.specialAbilities) {
+      const defs = (effects[sa.slug] ?? []).filter((d) => d.trigger === "on_ally_challenged");
+      for (const def of defs) {
+        if (!conditionMet(state, owner, c, def.when)) continue;
+        const ctx: EffectContext = { controller: owner, source: c, vars: { challenger: attacker.instanceId }, banished };
+        const suspension = runSteps(state, def.steps ?? [], ctx, logs);
+        if (suspension) {
+          state.pendingPrompts.push({
+            id: uid(), player: owner, sourceInstanceId: c.instanceId, kind: sa.slug,
+            text: suspension.text ? `${sa.name}: ${suspension.text}` : `${sa.name}: ${sa.effect}`,
+            auto: false, controller: owner, scope: suspension.scope, pick: suspension.pick,
+            reveal: suspension.reveal, handOwner: suspension.handOwner, modes: suspension.modes,
+            resume: { steps: suspension.steps, vars: ctx.vars },
+          });
+        }
+      }
+    }
+  }
 }
 
 /** Fire an event trigger for every character a player controls (e.g. "whenever you play an action"). */
@@ -771,7 +808,10 @@ export function reduce(
       // ability goes on the bag.
       attacker.exerted = true;
       fireTrigger(next, "on_challenge", attacker, next.currentPlayer, logs, effects, true, banished);
-      if (defenderIsChar) fireTrigger(next, "on_challenged", defender, otherPlayer(next.currentPlayer), logs, effects, true, banished);
+      if (defenderIsChar) {
+        fireTrigger(next, "on_challenged", defender, otherPlayer(next.currentPlayer), logs, effects, true, banished);
+        fireAllyChallenged(next, otherPlayer(next.currentPlayer), attacker, defender.instanceId, logs, effects, banished);
+      }
 
       // Challenge damage (simultaneous), with Challenger +N and Resist applied.
       // Dale "Spike Suit": your characters deal challenge damage with willpower.
