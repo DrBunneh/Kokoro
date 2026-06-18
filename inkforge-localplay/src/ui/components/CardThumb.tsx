@@ -25,7 +25,7 @@ function useCardImage(card: PrintedCard, size: ImageSize): string {
 }
 
 /** Full-screen overlay showing a large card + its rules text, for long-press reading. */
-function CardZoom({ card, onClose }: { card: PrintedCard; onClose: () => void }) {
+export function CardZoom({ card, onClose }: { card: PrintedCard; onClose: () => void }) {
   const src = useCardImage(card, "full");
   const fallback = placeholder({ id: card.id, name: card.fullName, cost: card.cost, colors: card.colors });
   return createPortal(

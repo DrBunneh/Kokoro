@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useDecks } from "@/state/useDecks";
 import { useGame } from "@/state/useGame";
 import { useCardDb } from "@/ui/hooks/useCardDb";
-import { CardThumb } from "@/ui/components/CardThumb";
+import { CardThumb, CardZoom } from "@/ui/components/CardThumb";
+import { useCardGesture } from "@/ui/hooks/useCardGesture";
 import { hasKeyword, keywordValue } from "@/engine/keywords";
 import { InkPool, ItemRow, activatedAbility } from "@/ui/components/BoardZones";
 import { cn } from "@/lib/cn";
 import type { CardInstance, GameState, PlayerId } from "@/engine/state";
+
+interface DragControls {
+  start: (c: CardInstance, x: number, y: number) => void;
+  move: (x: number, y: number) => void;
+  end: (c: CardInstance, x: number, y: number) => void;
+}
 
 const other = (p: PlayerId): PlayerId => (p === 1 ? 2 : 1);
 
@@ -203,9 +211,24 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
   const [attacker, setAttacker] = useState<string | null>(null);
   const [curtain, setCurtain] = useState(false);
   const [manualSel, setManualSel] = useState<string | null>(null);
+  const [drag, setDrag] = useState<{ card: CardInstance; x: number; y: number } | null>(null);
+  const [zoomCard, setZoomCard] = useState<CardInstance["printed"] | null>(null);
 
   const prompt = state.pendingPrompts[0] ?? null;
   const ink = readyInk(meP);
+
+  // Drop a dragged hand card onto a zone (inkwell → ink, play area → play).
+  function dropCard(c: CardInstance, x: number, y: number) {
+    setDrag(null);
+    const zone = document.elementFromPoint(x, y)?.closest("[data-drop]")?.getAttribute("data-drop");
+    if (zone === "ink") { dispatch({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSelHand(null); }
+    else if (zone === "play") { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSelHand(null); }
+  }
+  const dragControls = {
+    start: (c: CardInstance, x: number, y: number) => setDrag({ card: c, x, y }),
+    move: (x: number, y: number) => setDrag((d) => (d ? { ...d, x, y } : d)),
+    end: dropCard,
+  };
 
   // Route a board tap to bag-prompt resolution when one is pending.
   function promptTap(id: string): boolean {
@@ -229,6 +252,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
     setSelField(null);
     setSelItem(null);
     setAttacker(null);
+    setDrag(null);
     dispatch({ type: "END_TURN" });
     setCurtain(true);
   }
@@ -268,29 +292,33 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
       {/* Gap between the two players' sides. */}
       <div className="flex-1" />
 
-      {/* My side: board → inkwell → (status + hand below). */}
-      <FieldRow
-        cards={meP.field}
-        mode={attacker ? "attacking" : "mine"}
-        selectedId={attacker ?? selField}
-        onCardTap={(c) => {
-          if (promptTap(c.instanceId)) return;
-          if (attacker) { setAttacker(null); return; }
-          setSelHand(null);
-          setSelItem(null);
-          setSelField((id) => (id === c.instanceId ? null : c.instanceId));
-        }}
-      />
-      <ItemRow
-        items={meP.items}
-        selectedId={selItem}
-        onItemTap={(c) => {
-          if (promptTap(c.instanceId)) return;
-          setSelField(null);
-          setSelItem((id) => (id === c.instanceId ? null : c.instanceId));
-        }}
-      />
-      <InkPool player={meP} mine />
+      {/* My side: board → inkwell → (status + hand below). Both are drop zones. */}
+      <div data-drop="play" className={cn("rounded-lg", drag && "ring-2 ring-emerald-400/60")}>
+        <FieldRow
+          cards={meP.field}
+          mode={attacker ? "attacking" : "mine"}
+          selectedId={attacker ?? selField}
+          onCardTap={(c) => {
+            if (promptTap(c.instanceId)) return;
+            if (attacker) { setAttacker(null); return; }
+            setSelHand(null);
+            setSelItem(null);
+            setSelField((id) => (id === c.instanceId ? null : c.instanceId));
+          }}
+        />
+        <ItemRow
+          items={meP.items}
+          selectedId={selItem}
+          onItemTap={(c) => {
+            if (promptTap(c.instanceId)) return;
+            setSelField(null);
+            setSelItem((id) => (id === c.instanceId ? null : c.instanceId));
+          }}
+        />
+      </div>
+      <div data-drop="ink" className={cn("rounded-lg", drag && !state.hasInkedThisTurn && "ring-2 ring-sky-400/60")}>
+        <InkPool player={meP} mine />
+      </div>
       {prompt && <PromptBar state={state} prompt={prompt} me={me} manualSel={manualSel} onClearManualSel={() => setManualSel(null)} />}
       {!prompt && selectedChar && !attacker && (
         <div className="flex gap-1">
@@ -331,6 +359,8 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         onPlay={(c) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSelHand(null); }}
         onShift={(c, baseId) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: baseId }); setSelHand(null); }}
         onSing={(c, singerIds) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId, singers: singerIds }); setSelHand(null); }}
+        onZoom={(c) => setZoomCard(c.printed)}
+        dragControls={dragControls}
       />
 
       {/* Quest hint for selected field character is handled by tap above. */}
@@ -341,6 +371,14 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         <button onClick={() => dispatch({ type: "GAME_FINISH", winner: opp, reason: "concession" })} className="min-h-tap flex-1 rounded-lg bg-rose-500/20 text-xs text-rose-200">Concede</button>
       </div>
       <button onClick={onLeave} className="text-center text-[10px] text-slate-500 underline">Leave game</button>
+
+      {drag && createPortal(
+        <div className="pointer-events-none fixed z-[90] w-16 -translate-x-1/2 -translate-y-[120%] opacity-90" style={{ left: drag.x, top: drag.y }}>
+          <CardThumb card={drag.card.printed} zoomable={false} />
+        </div>,
+        document.body,
+      )}
+      {zoomCard && <CardZoom card={zoomCard} onClose={() => setZoomCard(null)} />}
     </div>
   );
 }
@@ -514,9 +552,7 @@ function pickSingers(state: GameState, field: CardInstance[], cost: number): str
   return value >= cost ? ids : [];
 }
 
-function HandRow({
-  state, cards, field, selectedId, canInk, ink, onCardTap, onInk, onPlay, onShift, onSing,
-}: {
+interface HandRowProps {
   state: GameState;
   cards: CardInstance[];
   field: CardInstance[];
@@ -528,34 +564,49 @@ function HandRow({
   onPlay: (c: CardInstance) => void;
   onShift: (c: CardInstance, baseId: string) => void;
   onSing: (c: CardInstance, singerIds: string[]) => void;
-}) {
+  onZoom: (c: CardInstance) => void;
+  dragControls: DragControls;
+}
+
+/** One hand card: tap to select, hold to zoom, drag onto a zone to ink/play. */
+function HandCard({ c, state, field, selected, canInk, ink, onCardTap, onInk, onPlay, onShift, onSing, onZoom, dragControls }: { c: CardInstance; selected: boolean } & Omit<HandRowProps, "cards" | "selectedId">) {
+  const shiftCost = keywordValue(state, c, "Shift");
+  const shiftBase = shiftCost > 0 ? field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
+  const singers = c.printed.type === "song" ? pickSingers(state, field, c.printed.cost) : [];
+  const gesture = useCardGesture({
+    onTap: () => onCardTap(c),
+    onLongPress: () => onZoom(c),
+    onDragStart: (x, y) => dragControls.start(c, x, y),
+    onDragMove: dragControls.move,
+    onDragEnd: (x, y) => dragControls.end(c, x, y),
+  });
+  return (
+    <div className="shrink-0">
+      <div {...gesture} className={cn("block w-16 touch-none rounded", selected && "ring-2 ring-ink-sapphire")}>
+        <CardThumb card={c.printed} zoomable={false} />
+      </div>
+      {selected && (
+        <div className="mt-1 flex flex-wrap gap-0.5">
+          <button disabled={!canInk || !c.printed.inkable} onClick={() => onInk(c)} className="flex-1 rounded bg-white/10 px-1 text-[10px] disabled:opacity-30">Ink</button>
+          <button disabled={ink < c.printed.cost} onClick={() => onPlay(c)} className="flex-1 rounded bg-ink-sapphire px-1 text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
+          {shiftBase && ink >= shiftCost && (
+            <button onClick={() => onShift(c, shiftBase.instanceId)} className="flex-1 rounded bg-ink-amethyst/70 px-1 text-[10px] text-white">Shift {shiftCost}</button>
+          )}
+          {singers.length > 0 && (
+            <button onClick={() => onSing(c, singers)} className="flex-1 rounded bg-ink-emerald/70 px-1 text-[10px] text-white">Sing</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HandRow({ cards, selectedId, ...rest }: HandRowProps) {
   return (
     <div className="flex items-end gap-1 overflow-x-auto rounded-lg bg-white/5 p-1">
-      {cards.map((c) => {
-        const selected = selectedId === c.instanceId;
-        const shiftCost = keywordValue(state, c, "Shift");
-        const shiftBase = shiftCost > 0 ? field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
-        const singers = c.printed.type === "song" ? pickSingers(state, field, c.printed.cost) : [];
-        return (
-          <div key={c.instanceId} className="shrink-0">
-            <button onClick={() => onCardTap(c)} className={cn("block w-16 rounded", selected && "ring-2 ring-ink-sapphire")}>
-              <CardThumb card={c.printed} />
-            </button>
-            {selected && (
-              <div className="mt-1 flex flex-wrap gap-0.5">
-                <button disabled={!canInk || !c.printed.inkable} onClick={() => onInk(c)} className="flex-1 rounded bg-white/10 px-1 text-[10px] disabled:opacity-30">Ink</button>
-                <button disabled={ink < c.printed.cost} onClick={() => onPlay(c)} className="flex-1 rounded bg-ink-sapphire px-1 text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
-                {shiftBase && ink >= shiftCost && (
-                  <button onClick={() => onShift(c, shiftBase.instanceId)} className="flex-1 rounded bg-ink-amethyst/70 px-1 text-[10px] text-white">Shift {shiftCost}</button>
-                )}
-                {singers.length > 0 && (
-                  <button onClick={() => onSing(c, singers)} className="flex-1 rounded bg-ink-emerald/70 px-1 text-[10px] text-white">Sing</button>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {cards.map((c) => (
+        <HandCard key={c.instanceId} c={c} selected={selectedId === c.instanceId} {...rest} />
+      ))}
     </div>
   );
 }
