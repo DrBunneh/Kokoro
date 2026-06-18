@@ -156,6 +156,11 @@ function selfCostReduction(state: GameState, p: PlayerState, source: CardInstanc
         const want = def.reduceSubtypeInDiscard.toLowerCase();
         total += p.discard.filter((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => s.toLowerCase() === want)).length;
       }
+      if (def.reduceTypeInDiscard) total += p.discard.filter((c) => c.printed.type === def.reduceTypeInDiscard).length;
+      if (def.reducePerExerted) {
+        for (const pid of [1, 2] as PlayerId[]) total += state.players[pid].field.filter((c) => c.printed.type === "character" && c.exerted).length;
+      }
+      if (def.reducePerInkwell) total += p.inkwell.length;
     }
   }
   return total;
@@ -302,6 +307,13 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   }
   if (when.enemyBanishedInChallengeThisTurn && !p.enemyBanishedInChallengeThisTurn) return false;
   if (when.nameBanishedThisTurn && !(state.banishedNamesThisTurn ?? []).some((n) => n.toLowerCase() === when.nameBanishedThisTurn!.toLowerCase())) return false;
+  if (when.challengedThisTurn && !p.challengedThisTurn) return false;
+  if (when.noCharacterChallengedThisTurn && p.challengedThisTurn) return false;
+  if (when.anyBanishedThisTurn && !state.anyBanishedThisTurn) return false;
+  if (when.haveDamagedCharacter && !p.field.some((c) => c.printed.type === "character" && c.damage > 0)) return false;
+  if (when.usedShift && source.cardsUnder.length === 0) return false;
+  if (when.opponentLoreAtMost != null && state.players[otherPlayer(controller)].lore > when.opponentLoreAtMost) return false;
+  if (when.banishedMaxCost != null && (ev?.banishedCard == null || ev.banishedCard.printed.cost > when.banishedMaxCost)) return false;
   return true;
 }
 
@@ -406,6 +418,7 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
       state.players[owner].ownToyBanishedThisTurn = true;
     }
     if (card.printed.type === "character") (state.banishedNamesThisTurn ??= []).push(card.printed.name);
+    state.anyBanishedThisTurn = true;
     fireTrigger(state, "on_banish", card, owner, logs, effects, true, queue);
     // "Whenever a character is banished while here" (The Library).
     if (card.atLocation) {
@@ -653,11 +666,15 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     state.players[pid].ownToyBanishedThisTurn = false;
     state.players[pid].removedDamageThisTurn = false;
     state.players[pid].enemyBanishedInChallengeThisTurn = false;
+    state.players[pid].challengedThisTurn = false;
   }
   state.players[player].extraInk = 0;
   state.endStepDone = false;
   state.usedActivated = [];
   state.banishedNamesThisTurn = [];
+  state.anyBanishedThisTurn = false;
+  // "Can't be challenged until your next turn" expires when the caster's turn begins.
+  for (const pid of [1, 2] as PlayerId[]) for (const c of state.players[pid].field) if (c.cantBeChallengedUntil === player) c.cantBeChallengedUntil = undefined;
   // "Until the start of your next turn" effects expire when their caster's turn begins.
   for (const pid of [1, 2] as PlayerId[]) {
     for (const c of [...state.players[pid].field, ...state.players[pid].items]) {
@@ -1124,7 +1141,7 @@ export function reduce(
       const attacker = ap.field.find((c) => c.instanceId === action.attackerId);
       if (!attacker || attacker.printed.type !== "character") throw new GameError("Attacker is not a character in play");
       if (attacker.exerted) throw new GameError("Attacker is exerted");
-      if (attacker.printed.specialAbilities.some((a) => a.slug === "standshisground")) throw new GameError("This character can't challenge");
+      if (attacker.printed.specialAbilities.some((a) => a.slug === "standshisground" || a.slug === "icebath")) throw new GameError("This character can't challenge");
       if (attacker.cantChallengeNextTurn) throw new GameError("This character can't challenge this turn");
       if (attacker.justPlayed && !hasKeyword(next, attacker, "Rush")) throw new GameError("Attacker is drying");
       // RC "Low Batteries": pay 1 {I} each time it challenges.
@@ -1153,10 +1170,17 @@ export function reduce(
         throw new GameError("Must challenge a character with Bodyguard");
       }
 
+      if (defenderIsChar && defender.cantBeChallengedUntil != null) throw new GameError("That character can't be challenged right now");
       // Declaration: the attacker exerts, then any "whenever this challenges"
       // ability goes on the bag.
       attacker.exerted = true;
+      next.players[next.currentPlayer].challengedThisTurn = true;
       fireTrigger(next, "on_challenge", attacker, next.currentPlayer, logs, effects, true, banished);
+      // "Whenever a character here challenges another character" (Beast's Castle).
+      if (attacker.atLocation) {
+        const al = ap.field.find((c) => c.instanceId === attacker.atLocation && c.printed.type === "location");
+        if (al) fireLocationHere(next, al, next.currentPlayer, "on_challenge_from_here", "challenger", attacker.instanceId, logs, effects, banished);
+      }
       // "Whenever one of your [Super] characters challenges" (Mr. Incredible).
       fireAllyActor(next, "on_ally_challenge", next.currentPlayer, attacker, "challenger", logs, effects, banished);
       if (defenderIsChar) {

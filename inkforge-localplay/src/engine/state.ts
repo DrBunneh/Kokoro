@@ -55,6 +55,8 @@ export interface CardInstance {
   cantChallengeNextTurn?: boolean;
   /** Can't ready at the start of its controller's next turn (cleared when skipped). */
   cantReadyNextTurn?: boolean;
+  /** Can't be challenged until the caster's next turn (Mother Will Protect You). */
+  cantBeChallengedUntil?: PlayerId;
 }
 
 /** A turn-scoped "pay N less for the next matching play" discount. */
@@ -90,6 +92,8 @@ export interface PlayerState {
   removedDamageThisTurn?: boolean;
   /** An opposing character was banished in a challenge this turn (Card Advantage). */
   enemyBanishedInChallengeThisTurn?: boolean;
+  /** One of this player's characters challenged this turn (John Smith, Mother's Necklace). */
+  challengedThisTurn?: boolean;
 }
 
 export interface CoinToss {
@@ -155,6 +159,8 @@ export interface GameState {
   eventGuard?: boolean;
   /** Names of characters banished this turn (Buzz's Arm "Missing Piece"). Reset each turn. */
   banishedNamesThisTurn?: string[];
+  /** Any character was banished this turn (Marching Off to Battle). Reset each turn. */
+  anyBanishedThisTurn?: boolean;
 }
 
 export const WIN_LORE = 20;

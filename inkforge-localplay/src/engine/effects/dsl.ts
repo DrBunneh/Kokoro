@@ -42,6 +42,7 @@ export type Trigger =
   | "on_banish_here" // a character was banished while at this location
   | "on_challenged_here" // a character at this location was challenged (Pizza Planet)
   | "on_challenge_banish_here" // a character here banished another in a challenge (Island of Nomanisan)
+  | "on_challenge_from_here" // a character at this location challenges (Beast's Castle)
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
@@ -131,6 +132,20 @@ export interface Condition {
   enemyBanishedInChallengeThisTurn?: boolean;
   /** A character with this name was banished this turn (Buzz's Arm). */
   nameBanishedThisTurn?: string;
+  /** One of your characters challenged this turn (John Smith's Compass). */
+  challengedThisTurn?: boolean;
+  /** None of your characters challenged this turn (Mother's Necklace, John Smith). */
+  noCharacterChallengedThisTurn?: boolean;
+  /** Any character was banished this turn (Marching Off to Battle). */
+  anyBanishedThisTurn?: boolean;
+  /** You have a character in play with damage (Mulan - Ready for Battle). */
+  haveDamagedCharacter?: boolean;
+  /** You used Shift to play the source (Pocahontas - Peacekeeper) — approximated via cards-under. */
+  usedShift?: boolean;
+  /** An opponent has at most this much lore (Scrooge - Ebenezer "Foreclosure"). */
+  opponentLoreAtMost?: number;
+  /** (on_other_banished) the banished character cost at most this (Cruella - Style Icon). */
+  banishedMaxCost?: number;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -240,6 +255,10 @@ export type Step =
   | { do: "grantKeyword"; to: string; keyword: string; value?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn" }
   // Move up to `amount` damage counters from one bound target to another:
   | { do: "moveDamage"; from: string; to: string; amount: number }
+  // Move `amount` damage from every other character to a bound target (Morgana):
+  | { do: "moveDamageAll"; to: string; amount: number; scope?: Scope }
+  // Protect a bound character from being challenged until your next turn (Mother Will Protect You):
+  | { do: "protectFromChallenge"; to: string }
   // Zone control on a bound character:
   | { do: "putToInkwell"; to: string; exerted?: boolean } // into its owner's inkwell
   | { do: "toBottom"; to: string }                         // to the bottom of its owner's deck
@@ -268,6 +287,12 @@ export type Step =
   | { do: "putTopToInkwell"; exerted?: boolean }
   // Mill the top `amount` cards of your deck into your discard (Preston, Lyle):
   | { do: "mill"; amount: number; player?: Who }
+  // Put the top card of your deck facedown under a bound character (Mickey - Bob Cratchit):
+  | { do: "putTopUnder"; to: string }
+  // Put all cards under a bound character into your hand (Alice - Well-Read Whisper):
+  | { do: "cardsUnderToHand"; from: string }
+  // Remove up to `amount` damage from every character in scope (Piglet - Cocoa Maker):
+  | { do: "removeDamageAll"; scope?: Scope; amount: number }
   // Look at the top `count`, put each on the top or bottom of your deck (Dr. Sara Bellum):
   | { do: "scryTopOrBottom"; count: number; text?: string }
   // Look at the top `count`, put the chosen one into your inkwell (exerted), rest
@@ -284,6 +309,8 @@ export type Step =
   // Return the source card from your discard to your hand (Will o' the Wisp / Snow White):
   | { do: "returnSelfToHand" }
   | { do: "discard"; player?: Who; amount?: number }
+  // A player reveals their hand (informational — a no-op in the hot-seat sim):
+  | { do: "revealHand"; player?: Who }
   | { do: "gainLore" | "loseLore"; player?: Who; amount?: number };
 
 export interface EffectDef {
@@ -297,6 +324,12 @@ export interface EffectDef {
   reducePer?: "actionInDiscard" | "characterInPlay";
   /** For trigger "cost": reduction that scales with characters of this subtype in your discard (Bouncing Ducky — Toy). */
   reduceSubtypeInDiscard?: string;
+  /** For trigger "cost": reduction that scales with cards of this type in your discard (Stegmutt — item). */
+  reduceTypeInDiscard?: CardType;
+  /** For trigger "cost": reduction that scales with exerted characters in play (Eeyore). */
+  reducePerExerted?: boolean;
+  /** For trigger "cost": reduction that scales with cards in your inkwell (Gramma Tala). */
+  reducePerInkwell?: boolean;
   /** For trigger "cost": play this card for free when `when` holds (Lilo - Causing an Uproar). */
   free?: boolean;
   /** Triggered abilities that may only resolve once per turn (Ariel - Ethereal Voice). */
@@ -597,6 +630,24 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "moveDamageAll": {
+      const to = resolveTarget(state, ctx, step.to);
+      if (to) {
+        for (const c of charsInScope(state, ctx.controller, step.scope ?? "any")) {
+          if (c.instanceId === to.instanceId) continue;
+          const moved = Math.min(step.amount, c.damage);
+          c.damage -= moved; to.damage += moved;
+        }
+        const loc = findInstance(state, to.instanceId);
+        if (loc && to.damage >= effectiveWillpower(state, to)) { banishCard(state.players[loc.owner], to, logs, state.turnNumber); ctx.banished?.push({ card: to, owner: loc.owner }); }
+      }
+      break;
+    }
+    case "protectFromChallenge": {
+      const t = resolveTarget(state, ctx, step.to);
+      if (t) t.cantBeChallengedUntil = ctx.controller;
+      break;
+    }
     case "putToInkwell": {
       const t = resolveTarget(state, ctx, step.to);
       const loc = t && findInstance(state, t.instanceId);
@@ -838,6 +889,29 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       state.rngCursor = rng.cursor;
       break;
     }
+    case "putTopUnder": {
+      const t = resolveTarget(state, ctx, step.to);
+      const top = state.players[ctx.controller].deck.shift();
+      if (t && top) t.cardsUnder.push(top);
+      break;
+    }
+    case "cardsUnderToHand": {
+      const t = resolveTarget(state, ctx, step.from);
+      if (t && t.cardsUnder.length > 0) {
+        for (const c of t.cardsUnder) { c.damage = 0; c.exerted = false; c.justPlayed = false; c.appliedEffects = []; }
+        state.players[ctx.controller].hand.push(...t.cardsUnder);
+        t.cardsUnder = [];
+      }
+      break;
+    }
+    case "removeDamageAll": {
+      let removedAny = false;
+      for (const c of charsInScope(state, ctx.controller, step.scope ?? "ally")) {
+        if (c.damage > 0) { c.damage = Math.max(0, c.damage - step.amount); removedAny = true; }
+      }
+      if (removedAny) { state.players[ctx.controller].removedDamageThisTurn = true; ctx.events?.onRemoveDamage?.(ctx.controller, step.amount); }
+      break;
+    }
     case "mill": {
       const p = state.players[player(ctx, step.player)];
       for (let k = 0; k < step.amount; k++) {
@@ -888,6 +962,11 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       const pid = player(ctx, step.player);
       const p = state.players[pid];
       for (let i = 0; i < (step.amount ?? 1); i++) { const c = p.hand.pop(); if (c) { p.discard.push(c); p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1; ctx.events?.onDiscard?.(pid); } }
+      break;
+    }
+    case "revealHand": {
+      const pid = player(ctx, step.player);
+      logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "ABILITY_TRIGGERED", message: `${state.players[pid].name} reveals their hand` }));
       break;
     }
     case "gainLore": {

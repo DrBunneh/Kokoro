@@ -71,6 +71,10 @@ export interface StaticDef {
   whileOnlyOneHere?: boolean;
   /** Only during the controller's turn while ≥N cards went to their discard this turn (Milo Thatch). */
   whileDiscardedThisTurnAtLeast?: number;
+  /** Only while the source is at a location (Elsa - Ice Artisan). */
+  whileAtLocation?: boolean;
+  /** Only while the controller has a character with this keyword in play (Roxanne, Timothy). */
+  whileControllerHasKeyword?: string;
 }
 
 /**
@@ -217,6 +221,8 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
         if (def.whileOpponentMoreLore && state.players[srcOwner === 1 ? 2 : 1].lore <= state.players[srcOwner].lore) continue;
         if (def.whileOnlyOneHere && charsHere(state, src) !== 1) continue;
         if (def.whileDiscardedThisTurnAtLeast != null && (state.currentPlayer !== srcOwner || (state.players[srcOwner].discardedThisTurn ?? 0) < def.whileDiscardedThisTurnAtLeast)) continue;
+        if (def.whileAtLocation && !src.atLocation) continue;
+        if (def.whileControllerHasKeyword && !state.players[srcOwner].field.some((c) => c.printed.type === "character" && targetHasPrintedKeyword(c, def.whileControllerHasKeyword!))) continue;
         if (def.targetHasKeyword && !targetHasPrintedKeyword(card, def.targetHasKeyword)) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
         const scale = def.perDiscard
