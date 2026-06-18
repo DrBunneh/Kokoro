@@ -1,10 +1,67 @@
 {
+  "yourenotwelcomehere": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "text": "deal 1 damage to chosen character",
+          "optional": true
+        },
+        {
+          "do": "dealDamage",
+          "to": "t",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "aculinarymasterpiece": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "text": "remove 2 damage from chosen character",
+          "optional": true
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "heaveho": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "text": "deal 2 damage to chosen character",
+          "optional": true
+        },
+        {
+          "do": "dealDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    }
+  ],
   "awealthofhappiness": [
     {
       "trigger": "on_play",
-      "effects": [
+      "steps": [
         {
-          "op": "gainLore",
+          "do": "gainLore",
           "player": "self",
           "amount": 1
         }
@@ -14,9 +71,9 @@
   "whatcomesnext": [
     {
       "trigger": "on_play",
-      "effects": [
+      "steps": [
         {
-          "op": "draw",
+          "do": "draw",
           "player": "self",
           "amount": 1
         }
@@ -26,9 +83,9 @@
   "sayhello": [
     {
       "trigger": "on_play",
-      "effects": [
+      "steps": [
         {
-          "op": "gainLore",
+          "do": "gainLore",
           "player": "self",
           "amount": 1
         }
@@ -36,14 +93,52 @@
     },
     {
       "trigger": "on_play",
-      "effects": [
+      "steps": [
         {
-          "op": "gainLore",
+          "do": "gainLore",
           "player": "self",
           "amount": 1
         }
       ]
     }
   ],
-  "$schema": "slug -> EffectDef[]; slugs use build-card-db slugify (lowercase alphanumerics)."
+  "letmeatem": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "text": "deal 1 damage to chosen character",
+          "optional": true
+        },
+        {
+          "do": "dealDamage",
+          "to": "t",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "thiswillhelp": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "text": "remove 2 damage from chosen character",
+          "optional": true
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

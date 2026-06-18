@@ -9,7 +9,7 @@
  * a concern of the view layer in PvP (spec §8.3), not here.
  */
 import type { PrintedCard } from "@/data/card-types";
-import type { EffectDef } from "./effects/dsl";
+import type { Scope, Step } from "./effects/dsl";
 
 export type GameStatus = "coin_toss" | "mulligan" | "playing" | "finished";
 export type PlayerId = 1 | 2;
@@ -71,10 +71,12 @@ export interface Prompt {
   text: string;
   /** Whether the engine can auto-resolve (no choice needed). */
   auto: boolean;
-  /** Deferred DSL effect to apply once a target is chosen. */
-  effect?: EffectDef;
-  /** Controller of the source, for resolving the deferred effect. */
+  /** Controller of the source, for resuming the deferred effect. */
   controller?: PlayerId;
+  /** Suspended effect sequence to resume once a target is chosen. */
+  resume?: { steps: Step[]; vars: Record<string, string> };
+  /** Allowed target scope for the pending choice (UI hint). */
+  scope?: Scope;
 }
 
 export interface GameState {

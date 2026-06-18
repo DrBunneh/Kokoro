@@ -208,7 +208,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
   // Route a board tap to bag-prompt resolution when one is pending.
   function promptTap(id: string): boolean {
     if (!prompt) return false;
-    if (prompt.effect) {
+    if (prompt.resume) {
       dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: id });
     } else {
       setManualSel(id);
@@ -330,7 +330,7 @@ function PromptBar({
     <div className="space-y-2 rounded-lg bg-amber-500/15 p-2 text-xs">
       <p className="font-semibold text-amber-100">Resolve ability ({state.players[prompt.player].name}):</p>
       <p className="text-amber-50">{prompt.text}</p>
-      {prompt.effect ? (
+      {prompt.resume ? (
         <div className="flex items-center gap-2">
           <span className="flex-1 text-amber-200">Tap a character to target.</span>
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">No target</button>

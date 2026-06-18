@@ -1,7 +1,9 @@
 /**
- * Declarative Effect DSL (spec §7.1). A small JSON dialect describing common
- * card effects, attached to cards by `specialAbilities[].slug`. DSL-covered
- * effects resolve automatically; anything uncovered falls back to Manual Mode.
+ * Composable effect DSL (spec §7, revised). An effect is an ordered list of
+ * primitive **actions**; the interpreter runs them in sequence. A `choose…`
+ * step that needs a target suspends the sequence (pushing a prompt); resuming
+ * binds the chosen target into the context and continues. Most cards reuse a
+ * small set of primitives, so coverage grows by data, not code.
  */
 import { otherPlayer, type CardInstance, type GameState, type PlayerId } from "../state";
 import { makeLog, type LogEntry } from "../replay";
@@ -17,152 +19,155 @@ export type Trigger =
   | "end_of_turn"
   | "activated";
 
-export type TargetSpec = "self_card" | "chosen_character" | "chosen_enemy" | "chosen_ally";
+export type Scope = "any" | "ally" | "enemy";
+export type Who = "self" | "opponent";
 
-export interface EffectOp {
-  op:
-    | "draw"
-    | "discard"
-    | "gainLore"
-    | "loseLore"
-    | "dealDamage"
-    | "removeDamage"
-    | "banish"
-    | "returnToHand"
-    | "buff"
-    | "debuff"
-    | "ready"
-    | "exert";
-  player?: "self" | "opponent";
-  amount?: number;
-  target?: TargetSpec;
-  strength?: number;
-  willpower?: number;
-  lore?: number;
-  duration?: "end_of_turn" | "permanent";
-}
+/** A single primitive action. `to`/`target` reference a bound var name or "self". */
+export type Step =
+  // Targeting (suspends for a tap; binds the chosen instance to `as`):
+  | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean }
+  // Damage:
+  | { do: "dealDamage"; to: string; amount: number }
+  | { do: "removeDamage"; to: string; amount: number }
+  // Movement / removal:
+  | { do: "banish"; to: string }
+  | { do: "returnToHand"; to: string }
+  // Stats (until end of turn unless duration given):
+  | { do: "buff" | "debuff"; to: string; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" }
+  | { do: "ready" | "exert"; to: string }
+  // Cards / lore:
+  | { do: "draw"; player?: Who; amount?: number }
+  | { do: "discard"; player?: Who; amount?: number }
+  | { do: "gainLore" | "loseLore"; player?: Who; amount?: number };
 
 export interface EffectDef {
   trigger: Trigger;
-  effects: EffectOp[];
+  steps: Step[];
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
 
-/** True if any op in a def requires the player to choose a target. */
-export function defNeedsChoice(def: EffectDef): boolean {
-  return def.effects.some((op) => op.target != null && op.target !== "self_card");
-}
-
 export interface EffectContext {
   controller: PlayerId;
   source: CardInstance;
-  /** Resolved target instance id for choice ops. */
-  chosenInstanceId?: string;
+  vars: Record<string, string>; // bound var name -> instanceId
 }
 
-function resolvePlayer(controller: PlayerId, who: EffectOp["player"]): PlayerId {
-  return who === "opponent" ? otherPlayer(controller) : controller;
+/** A suspended sequence awaiting a target choice. Serialisable (frame-safe). */
+export interface Suspension {
+  steps: Step[]; // remaining, starting with the choose step
+  scope: Scope;
+  text?: string;
+  optional: boolean;
 }
 
-/** Apply a single DSL op to the draft state. */
-export function applyEffectOp(
-  state: GameState,
-  op: EffectOp,
-  ctx: EffectContext,
-  logs: LogEntry[],
-): void {
-  const controller = ctx.controller;
-  const p = state.players[resolvePlayer(controller, op.player)];
-  const amount = op.amount ?? 1;
+const player = (ctx: EffectContext, who: Who | undefined): PlayerId =>
+  who === "opponent" ? otherPlayer(ctx.controller) : ctx.controller;
 
-  const target = (): CardInstance | undefined => {
-    if (op.target === "self_card") return ctx.source;
-    if (ctx.chosenInstanceId) return findInstance(state, ctx.chosenInstanceId)?.card;
-    return undefined;
-  };
+function resolveTarget(state: GameState, ctx: EffectContext, ref: string): CardInstance | undefined {
+  if (ref === "self") return ctx.source;
+  const id = ctx.vars[ref];
+  return id ? findInstance(state, id)?.card : undefined;
+}
 
-  switch (op.op) {
-    case "draw":
-      drawCards(p, amount);
-      logs.push(makeLog({ turnNumber: state.turnNumber, player: resolvePlayer(controller, op.player), type: "CARD_DRAWN", message: `Draw ${amount}` }));
-      break;
-    case "discard":
-      for (let i = 0; i < amount; i++) {
-        const c = p.hand.pop();
-        if (c) p.discard.push(c);
-      }
-      break;
-    case "gainLore":
-      p.lore += amount;
-      logs.push(makeLog({ turnNumber: state.turnNumber, player: resolvePlayer(controller, op.player), type: "LORE_GAINED", message: `Gain ${amount} lore`, data: { lore: p.lore } }));
-      break;
-    case "loseLore":
-      p.lore = Math.max(0, p.lore - amount);
-      break;
+function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEntry[]): void {
+  switch (step.do) {
     case "dealDamage": {
-      const t = target();
-      if (t) {
-        t.damage += amount;
-        const loc = findInstance(state, t.instanceId)!;
-        if (t.damage >= effectiveWillpower(t)) banishCard(state.players[loc.owner], t, logs, state.turnNumber);
-      }
+      const t = resolveTarget(state, ctx, step.to);
+      if (!t) return;
+      t.damage += step.amount;
+      const loc = findInstance(state, t.instanceId);
+      if (loc && t.damage >= effectiveWillpower(t)) banishCard(state.players[loc.owner], t, logs, state.turnNumber);
       break;
     }
     case "removeDamage": {
-      const t = target();
-      if (t) t.damage = Math.max(0, t.damage - amount);
+      const t = resolveTarget(state, ctx, step.to);
+      if (t) t.damage = Math.max(0, t.damage - step.amount);
       break;
     }
     case "banish": {
-      const t = target();
-      if (t) {
-        const loc = findInstance(state, t.instanceId)!;
-        banishCard(state.players[loc.owner], t, logs, state.turnNumber);
-      }
+      const t = resolveTarget(state, ctx, step.to);
+      const loc = t && findInstance(state, t.instanceId);
+      if (t && loc) banishCard(state.players[loc.owner], t, logs, state.turnNumber);
       break;
     }
     case "returnToHand": {
-      const t = target();
-      if (t) {
-        const loc = findInstance(state, t.instanceId);
-        if (loc) {
-          const arr = state.players[loc.owner][loc.zone];
-          const i = arr.indexOf(t);
-          if (i >= 0) arr.splice(i, 1);
-          t.damage = 0;
-          t.exerted = false;
-          t.justPlayed = false;
-          t.appliedEffects = [];
-          state.players[loc.owner].hand.push(t);
-        }
+      const t = resolveTarget(state, ctx, step.to);
+      const loc = t && findInstance(state, t.instanceId);
+      if (t && loc) {
+        const arr = state.players[loc.owner][loc.zone];
+        const i = arr.indexOf(t);
+        if (i >= 0) arr.splice(i, 1);
+        t.damage = 0; t.exerted = false; t.justPlayed = false; t.appliedEffects = [];
+        state.players[loc.owner].hand.push(t);
       }
       break;
     }
     case "buff":
     case "debuff": {
-      const t = target();
-      if (t) {
-        const sign = op.op === "debuff" ? -1 : 1;
-        t.appliedEffects.push({
-          source: ctx.source.instanceId,
-          strength: op.strength != null ? sign * op.strength : undefined,
-          willpower: op.willpower != null ? sign * op.willpower : undefined,
-          lore: op.lore != null ? sign * op.lore : undefined,
-          duration: op.duration ?? "end_of_turn",
-        });
-      }
+      const t = resolveTarget(state, ctx, step.to);
+      if (!t) return;
+      const s = step.do === "debuff" ? -1 : 1;
+      t.appliedEffects.push({
+        source: ctx.source.instanceId,
+        strength: step.strength != null ? s * step.strength : undefined,
+        willpower: step.willpower != null ? s * step.willpower : undefined,
+        lore: step.lore != null ? s * step.lore : undefined,
+        duration: step.duration ?? "end_of_turn",
+      });
       break;
     }
-    case "ready": {
-      const t = target();
-      if (t) t.exerted = false;
+    case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
+    case "exert": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = true; break; }
+    case "draw": {
+      const p = state.players[player(ctx, step.player)];
+      drawCards(p, step.amount ?? 1);
+      logs.push(makeLog({ turnNumber: state.turnNumber, player: player(ctx, step.player), type: "CARD_DRAWN", message: `Draw ${step.amount ?? 1}` }));
       break;
     }
-    case "exert": {
-      const t = target();
-      if (t) t.exerted = true;
+    case "discard": {
+      const p = state.players[player(ctx, step.player)];
+      for (let i = 0; i < (step.amount ?? 1); i++) { const c = p.hand.pop(); if (c) p.discard.push(c); }
+      break;
+    }
+    case "gainLore": {
+      const p = state.players[player(ctx, step.player)];
+      p.lore += step.amount ?? 1;
+      logs.push(makeLog({ turnNumber: state.turnNumber, player: player(ctx, step.player), type: "LORE_GAINED", message: `Gain ${step.amount ?? 1} lore`, data: { lore: p.lore } }));
+      break;
+    }
+    case "loseLore": {
+      const p = state.players[player(ctx, step.player)];
+      p.lore = Math.max(0, p.lore - (step.amount ?? 1));
       break;
     }
   }
+}
+
+/**
+ * Run steps in order. If a `chooseCharacter` step is reached with no target to
+ * bind, return a Suspension (the caller pushes a prompt). `injected` binds the
+ * leading choose step when resuming.
+ */
+export function runSteps(
+  state: GameState,
+  steps: Step[],
+  ctx: EffectContext,
+  logs: LogEntry[],
+  injected?: string,
+): Suspension | null {
+  let pending = injected;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    if (step.do === "chooseCharacter") {
+      if (pending != null) {
+        ctx.vars[step.as] = pending;
+        pending = undefined;
+        continue;
+      }
+      return { steps: steps.slice(i), scope: step.scope ?? "any", text: step.text, optional: step.optional ?? false };
+    }
+    applyStep(state, step, ctx, logs);
+  }
+  return null;
 }

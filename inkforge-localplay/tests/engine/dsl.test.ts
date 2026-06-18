@@ -30,7 +30,7 @@ function toPlay(lookup: CardLookup, seed = "dsl"): GameState {
 
 describe("Effect DSL + the bag", () => {
   it("auto-resolves a no-choice on_play effect (draw)", () => {
-    const effects: CardEffects = { drawer: [{ trigger: "on_play", effects: [{ op: "draw", player: "self", amount: 1 }] }] };
+    const effects: CardEffects = { drawer: [{ trigger: "on_play", steps: [{ do: "draw", player: "self", amount: 1 }] }] };
     let g = toPlay(lookupP1Ability("Drawer", "drawer", "When you play this, draw a card."));
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
     const deckBefore = g.players[1].deck.length;
@@ -53,14 +53,22 @@ describe("Effect DSL + the bag", () => {
     expect(() => reduce(g, { type: "END_TURN" }, {})).not.toThrow();
   });
 
-  it("pushes a choice prompt for a targeted effect instead of auto-resolving", () => {
-    const effects: CardEffects = { zap: [{ trigger: "on_play", effects: [{ op: "dealDamage", target: "chosen_enemy", amount: 2 }] }] };
-    let g = toPlay(lookupP1Ability("Zap", "zap", "Deal 2 damage to chosen enemy."));
+  it("pushes a choice prompt for a targeted effect, then resolves on target", () => {
+    const effects: CardEffects = {
+      zap: [{ trigger: "on_play", steps: [{ do: "chooseCharacter", as: "t", scope: "any" }, { do: "dealDamage", to: "t", amount: 2 }] }],
+    };
+    let g = toPlay(lookupP1Ability("Zap", "zap", "Deal 2 damage to chosen character."));
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
-    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    const playId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: playId }, effects).state;
     expect(g.pendingPrompts).toHaveLength(1);
-    expect(g.pendingPrompts[0]!.auto).toBe(false);
-    expect(g.pendingPrompts[0]!.effect).toBeDefined();
+    expect(g.pendingPrompts[0]!.resume).toBeDefined();
+    // Resolve against the just-played character itself → 2 damage applied.
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: playId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    // 2 damage to a willpower-1 character banishes it (proves the step resolved).
+    expect(g.players[1].field.some((c) => c.instanceId === playId)).toBe(false);
+    expect(g.players[1].discard.some((c) => c.instanceId === playId)).toBe(true);
   });
 
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {

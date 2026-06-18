@@ -27,7 +27,7 @@ import {
   keywordValue,
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
-import { applyEffectOp, defNeedsChoice, type CardEffects, type Trigger } from "./effects/dsl";
+import { runSteps, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
 
@@ -163,19 +163,21 @@ function fireTrigger(
 
     if (matching.length > 0) {
       for (const def of matching) {
-        if (defNeedsChoice(def)) {
+        const ctx: EffectContext = { controller, source, vars: {} };
+        const suspension = runSteps(state, def.steps, ctx, logs);
+        if (suspension) {
           state.pendingPrompts.push({
             id: uid(),
             player: controller,
             sourceInstanceId: source.instanceId,
             kind: sa.slug,
-            text: `${sa.name}: ${sa.effect}`,
+            text: suspension.text ? `${sa.name}: ${suspension.text}` : `${sa.name}: ${sa.effect}`,
             auto: false,
-            effect: def,
             controller,
+            scope: suspension.scope,
+            resume: { steps: suspension.steps, vars: ctx.vars },
           });
         } else {
-          for (const op of def.effects) applyEffectOp(state, op, { controller, source }, logs);
           logs.push(log({ turnNumber: state.turnNumber, player: controller, type: "ABILITY_TRIGGERED", message: `${sa.name} resolved`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
         }
       }
@@ -370,16 +372,25 @@ export function reduce(
       // Support (rules §10.13): add this character's {S} to another chosen one.
       if (hasKeyword(card, "Support")) {
         const amount = effectiveStrength(card);
-        next.pendingPrompts.push({
-          id: uid(),
-          player: next.currentPlayer,
-          sourceInstanceId: card.instanceId,
-          kind: "support",
-          text: `Support — add +${amount} ¤ to another chosen character this turn.`,
-          auto: false,
-          controller: next.currentPlayer,
-          effect: { trigger: "on_quest", effects: [{ op: "buff", target: "chosen_ally", strength: amount, duration: "end_of_turn" }] },
-        });
+        const steps: Step[] = [
+          { do: "chooseCharacter", as: "ally", scope: "ally", text: `add +${amount} ¤ to another character this turn` },
+          { do: "buff", to: "ally", strength: amount, duration: "end_of_turn" },
+        ];
+        const ctx: EffectContext = { controller: next.currentPlayer, source: card, vars: {} };
+        const suspension = runSteps(next, steps, ctx, logs);
+        if (suspension) {
+          next.pendingPrompts.push({
+            id: uid(),
+            player: next.currentPlayer,
+            sourceInstanceId: card.instanceId,
+            kind: "support",
+            text: `Support — ${suspension.text}`,
+            auto: false,
+            controller: next.currentPlayer,
+            scope: suspension.scope,
+            resume: { steps: suspension.steps, vars: ctx.vars },
+          });
+        }
       }
       return { state: next, logs };
     }
@@ -429,15 +440,28 @@ export function reduce(
       const i = next.pendingPrompts.findIndex((p) => p.id === action.promptId);
       if (i < 0) throw new GameError("No such prompt");
       const prompt = next.pendingPrompts[i]!;
-      if (prompt.effect && prompt.controller) {
+      next.pendingPrompts.splice(i, 1);
+      if (prompt.resume && prompt.controller) {
         const source = findInstance(next, prompt.sourceInstanceId ?? "")?.card;
         if (source) {
-          for (const op of prompt.effect.effects) {
-            applyEffectOp(next, op, { controller: prompt.controller, source, chosenInstanceId: action.targetInstanceId }, logs);
+          const ctx: EffectContext = { controller: prompt.controller, source, vars: prompt.resume.vars };
+          // The follow-up may itself need another choice → re-suspend a prompt.
+          const again = runSteps(next, prompt.resume.steps, ctx, logs, action.targetInstanceId);
+          if (again) {
+            next.pendingPrompts.push({
+              id: uid(),
+              player: prompt.player,
+              sourceInstanceId: prompt.sourceInstanceId,
+              kind: prompt.kind,
+              text: again.text ? `${prompt.kind}: ${again.text}` : prompt.text,
+              auto: false,
+              controller: prompt.controller,
+              scope: again.scope,
+              resume: { steps: again.steps, vars: ctx.vars },
+            });
           }
         }
       }
-      next.pendingPrompts.splice(i, 1);
       logs.push(log({ turnNumber: next.turnNumber, player: prompt.player, type: "CHOICE_RESOLVED", message: `Resolved: ${prompt.text}` }));
       return { state: next, logs };
     }
