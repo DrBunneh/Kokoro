@@ -1008,5 +1008,20 @@
   "scoutahead": [
     { "trigger": "on_play", "steps": [] }
   ],
+  "gooddog": [
+    { "trigger": "activated", "steps": [{ "do": "grantDiscount", "amount": 1, "cardType": "character", "uses": 1 }] }
+  ],
+  "smooththeway": [
+    { "trigger": "activated", "steps": [{ "do": "grantDiscount", "amount": 1, "cardType": "character", "uses": 1 }] }
+  ],
+  "nowitsaparty": [
+    { "trigger": "cost", "reducePer": "characterInPlay" }
+  ],
+  "somethingwonderful": [
+    { "trigger": "on_play", "steps": [{ "do": "returnFromDiscard", "cardType": "character", "maxCost": 2, "keepUpTo": 2, "optional": true }] }
+  ],
+  "packofherown": [
+    { "trigger": "on_play_character", "steps": [{ "do": "buff", "to": "self", "strength": 1, "duration": "end_of_turn" }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

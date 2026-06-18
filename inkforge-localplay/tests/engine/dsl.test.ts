@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createGame, reduce } from "@/engine/actions";
-import { keywordValue } from "@/engine/keywords";
+import { effectiveStrength, keywordValue } from "@/engine/keywords";
 import type { CardEffects } from "@/engine/effects/dsl";
 import type { CardLookup, GameState } from "@/engine/state";
 import type { PrintedCard } from "@/data/card-types";
@@ -658,6 +658,46 @@ describe("Effect DSL + the bag", () => {
     g.players[1].field.push({ instanceId: "m", printed: printed("m", { strength: 4, lore: 0, specialAbilities: [{ name: "Rigorous Training", slug: "rt", effect: "Quest: gain lore equal to strength." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
     g = reduce(g, { type: "QUEST", cardInstanceId: "m" }, effects).state;
     expect(g.players[1].lore).toBe(4); // 0 from quest (lore 0) + 4 from strength
+  });
+
+  it("activated cost-reduction (Pluto Good Dog) discounts the next character", () => {
+    const effects: CardEffects = { gooddog: [{ trigger: "activated", steps: [{ do: "grantDiscount", amount: 1, cardType: "character", uses: 1 }] }] };
+    const lookup: CardLookup = (id) =>
+      id === "pluto"
+        ? printed(id, { specialAbilities: [{ name: "Good Dog", slug: "gooddog", effect: "{E} — You pay 1 {I} less for the next character you play this turn." }] })
+        : printed(id, { type: "character", cost: 3, willpower: 3 });
+    let g = toPlay(lookup);
+    g.players[1].inkwell = Array.from({ length: 6 }, (_, j) => ({ instanceId: `ink${j}`, printed: printed(`ink${j}`), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] }));
+    const pluto = { instanceId: "pluto", printed: lookup("pluto")!, damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].field.push(pluto);
+    // Activate Good Dog ({E}) → grants the discount.
+    g = reduce(g, { type: "ACTIVATE_ABILITY", cardInstanceId: "pluto", slug: "gooddog" }, effects).state;
+    expect(g.players[1].field.find((c) => c.instanceId === "pluto")!.exerted).toBe(true);
+    expect(g.players[1].discounts).toHaveLength(1);
+    const readyBefore = g.players[1].inkwell.filter((c) => !c.exerted).length;
+    const charId = g.players[1].hand.find((c) => c.printed.type === "character")!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: charId }, effects).state;
+    expect(g.players[1].inkwell.filter((c) => !c.exerted).length).toBe(readyBefore - 2); // cost 3 → 2
+  });
+
+  it("on_play_character buffs your other characters (Pack of Her Own)", () => {
+    const effects: CardEffects = { pack: [{ trigger: "on_play_character", steps: [{ do: "buff", to: "self", strength: 1, duration: "end_of_turn" }] }] };
+    let g = toPlay((id) => printed(id, { type: "character", cost: 1, inkable: true }));
+    const lady = { instanceId: "lady", printed: printed("lady", { strength: 2, specialAbilities: [{ name: "Pack of Her Own", slug: "pack", effect: "Whenever you play a character, this gets +1 ¤." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].field.push(lady);
+    g.players[1].inkwell = [{ instanceId: "i", printed: printed("i"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] }];
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(effectiveStrength(g, g.players[1].field.find((c) => c.instanceId === "lady")!)).toBe(3); // 2 + 1
+  });
+
+  it("Once-per-turn free ability (Smooth the Way) can't be activated twice", () => {
+    const effects: CardEffects = { smooththeway: [{ trigger: "activated", steps: [{ do: "grantDiscount", amount: 1, cardType: "character", uses: 1 }] }] };
+    let g = toPlay((id) => printed(id));
+    g.players[1].field.push({ instanceId: "gw", printed: printed("gw", { specialAbilities: [{ name: "Smooth the Way", slug: "smooththeway", effect: "Once during your turn, you pay 1 {I} less for the next character you play this turn." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    g = reduce(g, { type: "ACTIVATE_ABILITY", cardInstanceId: "gw", slug: "smooththeway" }, effects).state;
+    expect(g.players[1].discounts).toHaveLength(1);
+    expect(g.players[1].field.find((c) => c.instanceId === "gw")!.exerted).toBe(false); // free, no exert
+    expect(() => reduce(g, { type: "ACTIVATE_ABILITY", cardInstanceId: "gw", slug: "smooththeway" }, effects)).toThrow(/already used/i);
   });
 
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {

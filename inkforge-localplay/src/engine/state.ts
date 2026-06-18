@@ -129,6 +129,8 @@ export interface GameState {
   lockout?: { caster: PlayerId; items: boolean };
   /** Whether the current turn's end-of-turn triggers have already fired. */
   endStepDone?: boolean;
+  /** "instanceId:slug" of free once-per-turn abilities already used this turn. */
+  usedActivated?: string[];
 }
 
 export const WIN_LORE = 20;

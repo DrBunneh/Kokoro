@@ -29,6 +29,13 @@ export interface StaticDef {
   whileExerted?: boolean;
   /** Only during the opponents' turns (Snow Fort "Barricade"). */
   onlyOpponentTurn?: boolean;
+  /** Only while the source's (raw) strength is at least this (Lady "Take the Lead"). */
+  whileSelfStrengthAtLeast?: number;
+}
+
+/** Strength excluding continuous mods — used by self-referential static conditions. */
+function rawStrength(card: CardInstance): number {
+  return (card.printed.strength ?? 0) + card.appliedEffects.reduce((n, e) => n + (e.strength ?? 0), 0);
 }
 
 const STATICS: Record<string, StaticDef[]> = (() => {
@@ -84,6 +91,7 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
       for (const def of STATICS[sa.slug] ?? []) {
         if (def.whileExerted && !src.exerted) continue;
         if (def.onlyOpponentTurn && state.currentPlayer === srcOwner) continue;
+        if (def.whileSelfStrengthAtLeast != null && rawStrength(src) < def.whileSelfStrengthAtLeast) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
         const scale = def.perDiscard ? state.players[srcOwner].discard.length : 1;
         if (def.strength) strength += def.strength * scale;

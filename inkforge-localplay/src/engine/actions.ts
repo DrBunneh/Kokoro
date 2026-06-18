@@ -148,6 +148,7 @@ function selfCostReduction(state: GameState, p: PlayerState, source: CardInstanc
       if (!conditionMet(state, p === state.players[1] ? 1 : 2, source, def.when)) continue;
       total += def.reduce ?? 0;
       if (def.reducePer === "actionInDiscard") total += p.discard.filter((c) => c.printed.type === "action" || c.printed.type === "song").length;
+      else if (def.reducePer === "characterInPlay") total += p.field.filter((c) => c.printed.type === "character").length;
     }
   }
   return total;
@@ -339,14 +340,19 @@ function fireForController(
   logs: LogEntry[],
   effects: CardEffects,
   banished?: BanishRef[],
+  excludeId?: string,
 ): void {
   for (const c of [...state.players[controller].field]) {
+    if (c.instanceId === excludeId) continue;
     if (c.printed.type === "character") fireTrigger(state, trigger, c, controller, logs, effects, true, banished);
   }
 }
 
 /** Parse the cost of an activated ability from the text before its em dash. */
 function parseActivationCost(effect: string): { exert: boolean; ink: number; banishSelf: boolean } {
+  // The cost is the text before the em dash; abilities with no em dash are free
+  // (e.g. "Once during your turn, …"), so don't mistake effect numbers for a cost.
+  if (!effect.includes("—")) return { exert: false, ink: 0, banishSelf: false };
   const head = effect.split("—")[0] ?? "";
   const inkMatch = head.match(/(\d+)\s*\{i\}/i);
   return {
@@ -367,6 +373,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   }
   state.players[player].extraInk = 0;
   state.endStepDone = false;
+  state.usedActivated = [];
   // A lockout ("opponents can't play …") expires when its caster's turn begins.
   if (state.lockout && state.lockout.caster === player) delete state.lockout;
   const p = state.players[player];
@@ -592,6 +599,7 @@ export function reduce(
       fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
       if (card.printed.type === "action" || card.printed.type === "song") fireForController(next, "on_play_action", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "song") fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
+      if (card.printed.type === "character") fireForController(next, "on_play_character", next.currentPlayer, logs, effects, banished, card.instanceId);
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
@@ -651,6 +659,11 @@ export function reduce(
       );
       if (!sa) throw new GameError("No activated ability to use");
 
+      // "Once during your turn" abilities (no cost) may only be used once per turn.
+      const onceKey = `${source.instanceId}:${sa.slug}`;
+      const isOncePerTurn = /^once (during|per) your turn/.test(sa.effect.trim().toLowerCase());
+      if (isOncePerTurn && (next.usedActivated ?? []).includes(onceKey)) throw new GameError("Already used this turn");
+
       const cost = parseActivationCost(sa.effect);
       // Exert cost: the source must be ready, and a drying character can't exert.
       if (cost.exert) {
@@ -666,6 +679,7 @@ export function reduce(
         banishCard(p, source, logs, next.turnNumber);
         banished.push({ card: source, owner: next.currentPlayer });
       }
+      if (isOncePerTurn) (next.usedActivated ??= []).push(onceKey);
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "ABILITY_TRIGGERED", message: `${p.name} activated ${sa.name}`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
 
       // Resolve only this ability's effect (or surface it for Manual Mode).
@@ -759,7 +773,7 @@ export function reduce(
           } else if (lead && lead.do === "returnFromDiscard") {
             const dpile = next.players[prompt.controller].discard;
             const kept = parseInt(prompt.resume.vars["__rfdKept"] ?? "0", 10);
-            const legal = dpile.filter((c) => !lead.cardType || c.printed.type === lead.cardType);
+            const legal = dpile.filter((c) => (!lead.cardType || c.printed.type === lead.cardType) && (lead.maxCost == null || c.printed.cost <= lead.maxCost));
             if (action.targetInstanceId != null) {
               if (!legal.some((c) => c.instanceId === action.targetInstanceId)) throw new GameError("Not a valid card to return");
               inject = action.targetInstanceId;

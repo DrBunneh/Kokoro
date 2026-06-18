@@ -21,6 +21,7 @@ export type Trigger =
   | "on_challenged" // when THIS character is challenged
   | "on_play_action" // whenever you play an action/song (for your other cards)
   | "on_play_song" // whenever you play a song specifically
+  | "on_play_character" // whenever you play a character (for your other cards)
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
@@ -138,7 +139,7 @@ export type Step =
   // Choose an item in play (suspends), then act on it (banish):
   | { do: "chooseItem"; as: string; scope?: Scope; text?: string; optional?: boolean }
   // Return card(s) from your discard to hand (suspends on a discard picker):
-  | { do: "returnFromDiscard"; cardType?: CardType; keepUpTo?: number; optional?: boolean; text?: string }
+  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; keepUpTo?: number; optional?: boolean; text?: string }
   // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
   | { do: "discardHandDraw"; player?: Who; draw: number }
   // Opponent discards `amount` random cards:
@@ -159,7 +160,7 @@ export interface EffectDef {
   /** For trigger "cost": flat ink reduction when playing this card. */
   reduce?: number;
   /** For trigger "cost": reduction that scales with a count. */
-  reducePer?: "actionInDiscard";
+  reducePer?: "actionInDiscard" | "characterInPlay";
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
@@ -179,6 +180,8 @@ export function classifyTrigger(effectText: string, cardType: CardType): Ability
   if (/^when this character is banished/.test(t)) return "on_banish";
   // Activated: a cost (exert/ink/"banish this") preceding an em dash.
   if (/^(\{e\}|\d+\s*\{[il]\}|banish this)[^—]*—/.test(t) || /^\{e\}/.test(t)) return "activated";
+  // Free "Once during your turn, …" abilities are player-activated (once/turn).
+  if (/^once (during|per) your turn/.test(t)) return "activated";
   // For actions/songs the whole text is the on-play effect.
   if (cardType === "song" || cardType === "action") return "on_play";
   return "static";
@@ -619,7 +622,7 @@ export function runSteps(
     }
     if (step.do === "returnFromDiscard") {
       const p = state.players[ctx.controller];
-      const matches = (c: CardInstance) => !step.cardType || c.printed.type === step.cardType;
+      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (step.maxCost == null || c.printed.cost <= step.maxCost);
       const keepUpTo = step.keepUpTo ?? 1;
       const nsK = "__rfdKept";
       if (pending != null) {

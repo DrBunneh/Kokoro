@@ -4,5 +4,6 @@
   "extremefocus": [{ "scope": "self", "strength": 1, "perDiscard": true }],
   "frightfulscheme": [{ "scope": "yoursSubtype", "subtype": "Pirate", "keyword": "Resist", "keywordValue": 1, "whileExerted": true }],
   "sinisterplot": [{ "scope": "self", "lore": 1 }],
+  "takethelead": [{ "scope": "self", "lore": 2, "whileSelfStrengthAtLeast": 3 }],
   "$schema": "slug -> StaticDef[] (continuous modifiers). slugs use build-card-db slugify."
 }
