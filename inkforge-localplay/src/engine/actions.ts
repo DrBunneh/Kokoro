@@ -19,13 +19,17 @@ import {
   otherPlayer,
 } from "./state";
 import { Rng } from "./rng";
-import { makeFrame, type Frame, type LogEntry } from "./replay";
+import { makeFrame, makeLog as log, type Frame, type LogEntry } from "./replay";
 import {
   effectiveStrength,
   hasKeyword,
   isBanished,
   keywordValue,
 } from "./keywords";
+import { banishCard, drawCards, findInstance, type Zone } from "./zones";
+import { applyEffectOp, defNeedsChoice, type CardEffects, type Trigger } from "./effects/dsl";
+import { cardEffects as defaultCardEffects } from "./effects";
+import { uid } from "@/lib/id";
 
 export type Action =
   | { type: "CHOOSE_STARTING_PLAYER"; player: PlayerId }
@@ -34,21 +38,23 @@ export type Action =
   | { type: "PLAY_CARD"; cardInstanceId: string }
   | { type: "QUEST"; cardInstanceId: string }
   | { type: "ATTACK"; attackerId: string; defenderId: string }
+  | { type: "RESPOND_TO_PROMPT"; promptId: string; targetInstanceId?: string }
+  | { type: "MANUAL_ADJUST"; ops: ManualOp[] }
   | { type: "END_TURN" }
   | { type: "GAME_FINISH"; winner: PlayerId; reason: "concession" };
+
+/** Manual Mode adjustments (spec §7.3) — every change is recorded as a frame. */
+export type ManualOp =
+  | { kind: "setDamage"; instanceId: string; value: number }
+  | { kind: "setExerted"; instanceId: string; value: boolean }
+  | { kind: "setLore"; player: PlayerId; value: number }
+  | { kind: "move"; instanceId: string; toPlayer: PlayerId; toZone: Zone };
 
 export class GameError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "GameError";
   }
-}
-
-let logSeq = 0;
-function log(
-  partial: Omit<LogEntry, "id" | "timestamp"> & { timestamp?: number },
-): LogEntry {
-  return { id: `log-${logSeq++}`, timestamp: partial.timestamp ?? Date.now(), ...partial };
 }
 
 export interface NewGameConfig {
@@ -136,30 +142,58 @@ function payInk(p: PlayerState, cost: number): void {
   }
 }
 
-/** Banish a card from a player's field to their discard (with any tucked cards). */
-function banishCard(p: PlayerState, card: CardInstance, logs: LogEntry[], turnNumber: number): void {
-  const i = p.field.indexOf(card);
-  if (i >= 0) p.field.splice(i, 1);
-  if (card.cardsUnder.length) {
-    p.discard.push(...card.cardsUnder);
-    card.cardsUnder = [];
-  }
-  card.damage = 0;
-  card.exerted = false;
-  card.justPlayed = false;
-  card.appliedEffects = [];
-  p.discard.push(card);
-  logs.push(log({ turnNumber, player: null, type: "CARD_DESTROYED", message: `${card.printed.fullName} was banished`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
-}
+/**
+ * Fire a trigger for a source card: resolve DSL-covered effects (auto, or push
+ * a choice prompt), and surface uncovered special abilities as Manual-Mode
+ * prompts. This is the bag (spec §4.6, §7): the engine blocks normal actions
+ * while prompts are pending.
+ */
+function fireTrigger(
+  state: GameState,
+  trigger: Trigger,
+  source: CardInstance,
+  controller: PlayerId,
+  logs: LogEntry[],
+  effects: CardEffects,
+  surfaceManual: boolean,
+): void {
+  for (const sa of source.printed.specialAbilities) {
+    const defs = effects[sa.slug] ?? [];
+    const matching = defs.filter((d) => d.trigger === trigger);
 
-/** Draw `n` from the top of a player's deck; returns false if they decked out. */
-function drawCards(p: PlayerState, n: number): boolean {
-  for (let i = 0; i < n; i++) {
-    const card = p.deck.shift();
-    if (!card) return false;
-    p.hand.push(card);
+    if (matching.length > 0) {
+      for (const def of matching) {
+        if (defNeedsChoice(def)) {
+          state.pendingPrompts.push({
+            id: uid(),
+            player: controller,
+            sourceInstanceId: source.instanceId,
+            kind: sa.slug,
+            text: `${sa.name}: ${sa.effect}`,
+            auto: false,
+            effect: def,
+            controller,
+          });
+        } else {
+          for (const op of def.effects) applyEffectOp(state, op, { controller, source }, logs);
+          logs.push(log({ turnNumber: state.turnNumber, player: controller, type: "ABILITY_TRIGGERED", message: `${sa.name} resolved`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
+        }
+      }
+      continue;
+    }
+
+    // Not in the DSL — surface for Manual Mode (T2 honesty), on play only.
+    if (surfaceManual && defs.length === 0) {
+      state.pendingPrompts.push({
+        id: uid(),
+        player: controller,
+        sourceInstanceId: source.instanceId,
+        kind: "manual",
+        text: `${sa.name}: ${sa.effect}`,
+        auto: false,
+      });
+    }
   }
-  return true;
 }
 
 /** Begin a player's turn: ready/set/draw. The first player skips the very first draw. */
@@ -204,9 +238,19 @@ function checkLoreWin(state: GameState, logs: LogEntry[]): void {
   }
 }
 
+const BAG_BLOCKED = new Set(["ADD_TO_INK", "PLAY_CARD", "QUEST", "ATTACK", "END_TURN"]);
+
 /** Pure rules reducer. Returns the next state and logs; throws on illegal actions. */
-export function reduce(state: GameState, action: Action): { state: GameState; logs: LogEntry[] } {
+export function reduce(
+  state: GameState,
+  action: Action,
+  effects: CardEffects = defaultCardEffects,
+): { state: GameState; logs: LogEntry[] } {
   if (state.status === "finished") throw new GameError("Game is finished");
+  // The bag blocks normal actions while triggered abilities await resolution.
+  if (state.pendingPrompts.length > 0 && BAG_BLOCKED.has(action.type)) {
+    throw new GameError("Resolve pending abilities first");
+  }
   const next = clone(state);
   const logs: LogEntry[] = [];
 
@@ -305,6 +349,7 @@ export function reduce(state: GameState, action: Action): { state: GameState; lo
           break;
       }
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} played ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+      fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true);
       return { state: next, logs };
     }
 
@@ -321,6 +366,7 @@ export function reduce(state: GameState, action: Action): { state: GameState; lo
       p.lore += gained;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
+      fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, false);
       return { state: next, logs };
     }
 
@@ -362,6 +408,44 @@ export function reduce(state: GameState, action: Action): { state: GameState; lo
       // Banish anything that took lethal damage (simultaneous).
       if (isBanished(defender)) banishCard(dp, defender, logs, next.turnNumber);
       if (isBanished(attacker)) banishCard(ap, attacker, logs, next.turnNumber);
+      return { state: next, logs };
+    }
+
+    case "RESPOND_TO_PROMPT": {
+      const i = next.pendingPrompts.findIndex((p) => p.id === action.promptId);
+      if (i < 0) throw new GameError("No such prompt");
+      const prompt = next.pendingPrompts[i]!;
+      if (prompt.effect && prompt.controller) {
+        const source = findInstance(next, prompt.sourceInstanceId ?? "")?.card;
+        if (source) {
+          for (const op of prompt.effect.effects) {
+            applyEffectOp(next, op, { controller: prompt.controller, source, chosenInstanceId: action.targetInstanceId }, logs);
+          }
+        }
+      }
+      next.pendingPrompts.splice(i, 1);
+      logs.push(log({ turnNumber: next.turnNumber, player: prompt.player, type: "CHOICE_RESOLVED", message: `Resolved: ${prompt.text}` }));
+      return { state: next, logs };
+    }
+
+    case "MANUAL_ADJUST": {
+      for (const op of action.ops) {
+        if (op.kind === "setLore") {
+          next.players[op.player].lore = Math.max(0, op.value);
+          continue;
+        }
+        const found = findInstance(next, op.instanceId);
+        if (!found) continue;
+        if (op.kind === "setDamage") found.card.damage = Math.max(0, op.value);
+        else if (op.kind === "setExerted") found.card.exerted = op.value;
+        else if (op.kind === "move") {
+          const fromArr = next.players[found.owner][found.zone];
+          const j = fromArr.indexOf(found.card);
+          if (j >= 0) fromArr.splice(j, 1);
+          next.players[op.toPlayer][op.toZone].push(found.card);
+        }
+      }
+      logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "MANUAL_ADJUST", message: `Manual adjustment (${action.ops.length})` }));
       return { state: next, logs };
     }
 
@@ -416,8 +500,9 @@ export function applyAction(
   action: Action,
   seq: number,
   prevLogCount = 0,
+  effects?: CardEffects,
 ): ApplyResult {
-  const { state: nextState, logs } = reduce(state, action);
+  const { state: nextState, logs } = reduce(state, action, effects);
   // Lore wins are checked after every action.
   checkLoreWin(nextState, logs);
   const frame = makeFrame(

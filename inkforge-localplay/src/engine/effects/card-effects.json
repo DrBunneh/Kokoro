@@ -1,0 +1,49 @@
+{
+  "awealthofhappiness": [
+    {
+      "trigger": "on_play",
+      "effects": [
+        {
+          "op": "gainLore",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "whatcomesnext": [
+    {
+      "trigger": "on_play",
+      "effects": [
+        {
+          "op": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "sayhello": [
+    {
+      "trigger": "on_play",
+      "effects": [
+        {
+          "op": "gainLore",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "trigger": "on_play",
+      "effects": [
+        {
+          "op": "gainLore",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "$schema": "slug -> EffectDef[]; slugs use build-card-db slugify (lowercase alphanumerics)."
+}

@@ -32,6 +32,16 @@ export interface LogEntry {
   data?: Record<string, unknown>;
 }
 
+let logSeq = 0;
+/** Build a LogEntry with a unique id. Log ids needn't be deterministic — state
+ * reconstruction folds frames, not logs (which are persisted as recorded). */
+export function makeLog(
+  partial: Omit<LogEntry, "id" | "timestamp"> & { timestamp?: number },
+): LogEntry {
+  const { timestamp, ...rest } = partial;
+  return { id: `log-${logSeq++}`, timestamp: timestamp ?? Date.now(), ...rest };
+}
+
 export interface FoldOptions {
   /** Fold only frames with index < upTo (default: all). */
   upTo?: number;

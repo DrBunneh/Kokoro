@@ -200,8 +200,21 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
   const [selField, setSelField] = useState<string | null>(null);
   const [attacker, setAttacker] = useState<string | null>(null);
   const [curtain, setCurtain] = useState(false);
+  const [manualSel, setManualSel] = useState<string | null>(null);
 
+  const prompt = state.pendingPrompts[0] ?? null;
   const ink = readyInk(meP);
+
+  // Route a board tap to bag-prompt resolution when one is pending.
+  function promptTap(id: string): boolean {
+    if (!prompt) return false;
+    if (prompt.effect) {
+      dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: id });
+    } else {
+      setManualSel(id);
+    }
+    return true;
+  }
   const selectedChar = meP.field.find((c) => c.instanceId === selField);
   const canQuestSel = !!selectedChar && selectedChar.printed.type === "character" && !selectedChar.exerted && !selectedChar.justPlayed && (selectedChar.printed.lore ?? 0) > 0;
   const canAttackSel = !!selectedChar && selectedChar.printed.type === "character" && !selectedChar.exerted && (!selectedChar.justPlayed || hasKeyword(selectedChar, "Rush"));
@@ -236,7 +249,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         <span>✋ {oppP.hand.length}</span>
         <span>🂠 {oppP.deck.length}</span>
       </div>
-      <FieldRow cards={oppP.field} enemy mode={attacker ? "target" : "none"} onCardTap={(c) => { if (attacker) { dispatch({ type: "ATTACK", attackerId: attacker, defenderId: c.instanceId }); setAttacker(null); } }} />
+      <FieldRow cards={oppP.field} enemy mode={attacker || prompt ? "target" : "none"} onCardTap={(c) => { if (promptTap(c.instanceId)) return; if (attacker) { dispatch({ type: "ATTACK", attackerId: attacker, defenderId: c.instanceId }); setAttacker(null); } }} />
 
       {/* My field */}
       <div className="mt-auto" />
@@ -245,12 +258,14 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         mode={attacker ? "attacking" : "mine"}
         selectedId={attacker ?? selField}
         onCardTap={(c) => {
+          if (promptTap(c.instanceId)) return;
           if (attacker) { setAttacker(null); return; }
           setSelHand(null);
           setSelField((id) => (id === c.instanceId ? null : c.instanceId));
         }}
       />
-      {selectedChar && !attacker && (
+      {prompt && <PromptBar state={state} prompt={prompt} me={me} manualSel={manualSel} onClearManualSel={() => setManualSel(null)} />}
+      {!prompt && selectedChar && !attacker && (
         <div className="flex gap-1">
           <button disabled={!canQuestSel} onClick={() => { dispatch({ type: "QUEST", cardInstanceId: selectedChar.instanceId }); setSelField(null); }} className="min-h-tap flex-1 rounded-lg bg-white/10 text-xs disabled:opacity-30">Quest (+{selectedChar.printed.lore ?? 0})</button>
           <button disabled={!canAttackSel} onClick={() => { setAttacker(selectedChar.instanceId); setSelField(null); }} className="min-h-tap flex-1 rounded-lg bg-amber-500/30 text-xs text-amber-100 disabled:opacity-30">Challenge</button>
@@ -283,10 +298,67 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
       <div className="flex gap-1">
         <button onClick={undo} className="min-h-tap flex-1 rounded-lg bg-white/10 text-xs">↶ Undo</button>
         <button onClick={redo} className="min-h-tap flex-1 rounded-lg bg-white/10 text-xs">↷ Redo</button>
-        <button onClick={endTurn} className="min-h-tap flex-[2] rounded-lg bg-ink-sapphire text-xs font-semibold text-white">End turn</button>
+        <button onClick={endTurn} disabled={!!prompt} className="min-h-tap flex-[2] rounded-lg bg-ink-sapphire text-xs font-semibold text-white disabled:opacity-40">End turn</button>
         <button onClick={() => dispatch({ type: "GAME_FINISH", winner: opp, reason: "concession" })} className="min-h-tap flex-1 rounded-lg bg-rose-500/20 text-xs text-rose-200">Concede</button>
       </div>
       <button onClick={onLeave} className="text-center text-[10px] text-slate-500 underline">Leave game</button>
+    </div>
+  );
+}
+
+function PromptBar({
+  state, prompt, me, manualSel, onClearManualSel,
+}: {
+  state: GameState;
+  prompt: NonNullable<GameState["pendingPrompts"][number]>;
+  me: PlayerId;
+  manualSel: string | null;
+  onClearManualSel: () => void;
+}) {
+  const dispatch = useGame((s) => s.dispatch);
+  const meP = state.players[me];
+  const allOnBoard = [
+    ...state.players[1].field, ...state.players[2].field,
+    ...state.players[1].items, ...state.players[2].items,
+  ];
+  const card = manualSel ? allOnBoard.find((c) => c.instanceId === manualSel) : null;
+  const setLore = (value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setLore", player: me, value }] });
+  const setDamage = (instanceId: string, value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setDamage", instanceId, value }] });
+  const setExerted = (instanceId: string, value: boolean) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setExerted", instanceId, value }] });
+
+  return (
+    <div className="space-y-2 rounded-lg bg-amber-500/15 p-2 text-xs">
+      <p className="font-semibold text-amber-100">Resolve ability ({state.players[prompt.player].name}):</p>
+      <p className="text-amber-50">{prompt.text}</p>
+      {prompt.effect ? (
+        <div className="flex items-center gap-2">
+          <span className="flex-1 text-amber-200">Tap a character to target.</span>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">No target</button>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span>Your lore:</span>
+            <button onClick={() => setLore(Math.max(0, meP.lore - 1))} className="h-6 w-6 rounded bg-white/10">−</button>
+            <span className="w-5 text-center">{meP.lore}</span>
+            <button onClick={() => setLore(meP.lore + 1)} className="h-6 w-6 rounded bg-white/10">+</button>
+          </div>
+          {card && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate">{card.printed.fullName}</span>
+              <span>dmg</span>
+              <button onClick={() => setDamage(card.instanceId, Math.max(0, card.damage - 1))} className="h-6 w-6 rounded bg-white/10">−</button>
+              <span className="w-5 text-center">{card.damage}</span>
+              <button onClick={() => setDamage(card.instanceId, card.damage + 1)} className="h-6 w-6 rounded bg-white/10">+</button>
+              <button onClick={() => setExerted(card.instanceId, !card.exerted)} className="rounded bg-white/10 px-2">{card.exerted ? "Ready" : "Exert"}</button>
+            </div>
+          )}
+          <p className="text-[10px] text-amber-200">Tap a card to adjust it; Undo reverts.</p>
+          <button onClick={() => { dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id }); onClearManualSel(); }} className="w-full rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">
+            Done
+          </button>
+        </div>
+      )}
     </div>
   );
 }

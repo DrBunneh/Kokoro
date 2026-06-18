@@ -9,6 +9,7 @@
  * a concern of the view layer in PvP (spec §8.3), not here.
  */
 import type { PrintedCard } from "@/data/card-types";
+import type { EffectDef } from "./effects/dsl";
 
 export type GameStatus = "coin_toss" | "mulligan" | "playing" | "finished";
 export type PlayerId = 1 | 2;
@@ -64,12 +65,16 @@ export interface Prompt {
   player: PlayerId;
   /** Source card instance, if any. */
   sourceInstanceId?: string;
-  /** Ability slug / kind. */
+  /** Ability slug / kind ("manual" for an uncovered ability). */
   kind: string;
   /** Human-readable text (for Manual Mode). */
   text: string;
   /** Whether the engine can auto-resolve (no choice needed). */
   auto: boolean;
+  /** Deferred DSL effect to apply once a target is chosen. */
+  effect?: EffectDef;
+  /** Controller of the source, for resolving the deferred effect. */
+  controller?: PlayerId;
 }
 
 export interface GameState {
