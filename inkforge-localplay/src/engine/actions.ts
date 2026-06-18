@@ -280,6 +280,12 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.ownToyBanishedThisTurn && !p.ownToyBanishedThisTurn) return false;
   if (when.opponentInkwellMoreThanYou && state.players[otherPlayer(controller)].inkwell.length <= p.inkwell.length) return false;
   if (when.opponentHandMoreThanYou && state.players[otherPlayer(controller)].hand.length <= p.hand.length) return false;
+  if (when.subtypeInDiscardAtLeast) {
+    const want = when.subtypeInDiscardAtLeast.subtype.toLowerCase();
+    const n = p.discard.filter((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => s.toLowerCase() === want)).length;
+    if (n < when.subtypeInDiscardAtLeast.count) return false;
+  }
+  if (when.haveOwnItem && p.items.length === 0) return false;
   return true;
 }
 
@@ -871,6 +877,11 @@ export function reduce(
       // Dash "Record Time" may quest the turn he's played (ignores drying).
       const questAnyTime = card.printed.specialAbilities.some((a) => a.slug === "recordtime");
       if (card.justPlayed && !questAnyTime) throw new GameError("Character is drying (played this turn)");
+      // RC "Low Batteries": pay 1 {I} each time it quests.
+      if (card.printed.specialAbilities.some((a) => a.slug === "lowbatteries")) {
+        if (readyInk(p).length < 1) throw new GameError("This character must pay 1 ink to quest");
+        payInk(p, 1);
+      }
       card.exerted = true;
       const gained = effectiveLore(next, card);
       p.lore += gained;
@@ -1004,6 +1015,11 @@ export function reduce(
       if (attacker.exerted) throw new GameError("Attacker is exerted");
       if (attacker.printed.specialAbilities.some((a) => a.slug === "standshisground")) throw new GameError("This character can't challenge");
       if (attacker.justPlayed && !hasKeyword(next, attacker, "Rush")) throw new GameError("Attacker is drying");
+      // RC "Low Batteries": pay 1 {I} each time it challenges.
+      if (attacker.printed.specialAbilities.some((a) => a.slug === "lowbatteries")) {
+        if (readyInk(ap).length < 1) throw new GameError("This character must pay 1 ink to challenge");
+        payInk(ap, 1);
+      }
 
       const defender = dp.field.find((c) => c.instanceId === action.defenderId);
       if (!defender) throw new GameError("Defender is not in play");

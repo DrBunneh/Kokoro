@@ -102,6 +102,10 @@ export interface Condition {
   opponentInkwellMoreThanYou?: boolean;
   /** An opponent has more cards in hand than you (Clarabelle - Light on Her Hooves). */
   opponentHandMoreThanYou?: boolean;
+  /** You have at least N characters of this subtype in your discard (Hand-in-the-Box). */
+  subtypeInDiscardAtLeast?: { subtype: string; count: number };
+  /** You control at least one item (Belle - Apprentice Inventor). */
+  haveOwnItem?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -205,7 +209,7 @@ export type Step =
   // Choose an item in play (suspends), then act on it (banish):
   | { do: "chooseItem"; as: string; scope?: Scope; text?: string; optional?: boolean }
   // Return card(s) from your discard to hand (suspends on a discard picker):
-  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; keepUpTo?: number; optional?: boolean; text?: string }
+  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; keepUpTo?: number; to?: "hand" | "bottom"; optional?: boolean; text?: string }
   // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
   | { do: "discardHandDraw"; player?: Who; draw: number }
   // Opponent discards `amount` random cards:
@@ -836,7 +840,7 @@ export function runSteps(
           if (idx >= 0) {
             const card = p.discard.splice(idx, 1)[0]!;
             card.damage = 0; card.exerted = false; card.justPlayed = false; card.appliedEffects = [];
-            p.hand.push(card);
+            if (step.to === "bottom") p.deck.push(card); else p.hand.push(card);
             kept += 1;
             ctx.vars[nsK] = String(kept);
           }

@@ -24,6 +24,7 @@
   "evervaliant": [],
   "extralayers": [],
   "foreverstrong": [],
+  "lowbatteries": [],
   "increasingwisdom": [{ "scope": "self", "lore": 1, "perCardUnder": true }],
   "countingcoins": [{ "scope": "self", "strength": 1, "willpower": 1, "perCardUnder": true }],
   "superhumanstrength": [{ "scope": "self", "strength": 3, "whileHasCardUnder": true }],

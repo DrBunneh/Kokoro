@@ -1599,6 +1599,26 @@
       { "do": "dealDamage", "to": "t", "amount": 1 }
     ] }
   ],
+  "whatdyasay": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "choose an opposing character to draw 2 cards?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "draw 2 cards" },
+      { "do": "draw", "player": "self", "amount": 2 }
+    ] }
+  ],
+  "timetomove": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "put 2 characters from your discard on the bottom to give this Rush?" },
+      { "do": "returnFromDiscard", "cardType": "character", "keepUpTo": 2, "to": "bottom", "optional": true, "text": "put a character on the bottom of your deck" },
+      { "do": "grantKeyword", "to": "self", "keyword": "Rush", "duration": "end_of_turn" }
+    ] }
+  ],
+  "springloaded": [
+    { "trigger": "cost", "free": true, "when": { "subtypeInDiscardAtLeast": { "subtype": "Toy", "count": 1 } } }
+  ],
+  "whatamess": [
+    { "trigger": "cost", "free": true, "when": { "haveOwnItem": true } }
+  ],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],
