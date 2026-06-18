@@ -383,6 +383,58 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].discounts).toHaveLength(0);
   });
 
+  it("AoE damage (dealDamageAll) hits and banishes all enemy characters", () => {
+    const effects: CardEffects = {
+      quake: [{ trigger: "on_play", steps: [{ do: "dealDamageAll", scope: "enemy", amount: 2 }] }],
+    };
+    let g = toPlay(lookupP1Ability("Quake", "quake", "Deal 2 damage to each opposing character."));
+    const a = { instanceId: "ea", printed: printed("ea", { willpower: 2 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    const b = { instanceId: "eb", printed: printed("eb", { willpower: 5 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[2].field.push(a, b);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.players[2].field.some((c) => c.instanceId === "ea")).toBe(false); // 2 dmg ≥ 2 wp → banished
+    expect(g.players[2].field.find((c) => c.instanceId === "eb")!.damage).toBe(2); // survives
+  });
+
+  it("count-based damage scales with your characters in play", () => {
+    const effects: CardEffects = {
+      blaze: [{ trigger: "on_play", steps: [
+        { do: "chooseCharacter", as: "t", scope: "any", optional: true },
+        { do: "dealDamage", to: "t", amountPer: { scope: "ally" } },
+      ] }],
+    };
+    let g = toPlay(lookupP1Ability("Blaze", "blaze", "Deal damage equal to your character count."));
+    // Two ally characters already in play → amount should be 2.
+    g.players[1].field.push(
+      { instanceId: "m1", printed: printed("m1"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+      { instanceId: "m2", printed: printed("m2"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+    );
+    const victim = { instanceId: "v", printed: printed("v", { willpower: 9 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[2].field.push(victim);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "v" }, effects).state;
+    // Two pre-existing allies + the just-played source character = 3 in play.
+    expect(g.players[2].field.find((c) => c.instanceId === "v")!.damage).toBe(3);
+  });
+
+  it("buffAll excludes the source and lasts until end of turn", () => {
+    const effects: CardEffects = {
+      rally: [{ trigger: "on_play", steps: [{ do: "buffAll", scope: "ally", strength: 3, excludeSelf: true, duration: "end_of_turn" }] }],
+    };
+    let g = toPlay(lookupP1Ability("Rally", "rally", "Your other characters get +3 this turn."));
+    const ally = { instanceId: "ally1", printed: printed("ally1", { strength: 1 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].field.push(ally);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    const buffed = g.players[1].field.find((c) => c.instanceId === "ally1")!;
+    expect(buffed.appliedEffects.some((e) => e.strength === 3)).toBe(true);
+    // The just-played source got no buff (excludeSelf).
+    const source = g.players[1].field.find((c) => c.instanceId !== "ally1")!;
+    expect(source.appliedEffects.some((e) => e.strength === 3)).toBe(false);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

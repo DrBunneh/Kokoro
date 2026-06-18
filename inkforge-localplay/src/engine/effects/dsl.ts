@@ -23,6 +23,12 @@ export type Trigger =
 export type Scope = "any" | "ally" | "enemy";
 export type Who = "self" | "opponent";
 
+/** A magnitude that scales with the number of characters in a scope. */
+export interface AmountPer {
+  scope: Scope;
+  excludeSelf?: boolean;
+}
+
 /** Restricts which characters are a legal target (e.g. "with 3 {S} or less"). */
 export interface TargetFilter {
   maxStrength?: number;
@@ -66,14 +72,18 @@ export type Step =
   // Move a bound (hand) card into the inkwell / discard:
   | { do: "toInkwell"; from: string; exerted?: boolean }
   | { do: "discardCard"; from: string }
-  // Damage:
-  | { do: "dealDamage"; to: string; amount: number }
+  // Damage (amount may instead scale with a character count via amountPer):
+  | { do: "dealDamage"; to: string; amount?: number; amountPer?: AmountPer }
   | { do: "removeDamage"; to: string; amount: number }
+  // Area damage to every character in scope:
+  | { do: "dealDamageAll"; scope?: Scope; amount: number }
   // Movement / removal:
   | { do: "banish"; to: string }
   | { do: "returnToHand"; to: string }
   // Stats (until end of turn unless duration given):
-  | { do: "buff" | "debuff"; to: string; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" }
+  | { do: "buff" | "debuff"; to: string; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent"; amountPer?: AmountPer }
+  // Area stat change to every character in scope (optionally excluding the source):
+  | { do: "buffAll" | "debuffAll"; scope?: Scope; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent"; excludeSelf?: boolean }
   | { do: "ready" | "exert"; to: string }
   // Cards / lore:
   | { do: "draw"; player?: Who; amount?: number }
@@ -162,17 +172,46 @@ function resolveTarget(state: GameState, ctx: EffectContext, ref: string): CardI
   return id ? findInstance(state, id)?.card : undefined;
 }
 
+/** Characters in play within a scope, relative to the controller. */
+function charsInScope(state: GameState, controller: PlayerId, scope: Scope): CardInstance[] {
+  const out: CardInstance[] = [];
+  for (const owner of [1, 2] as PlayerId[]) {
+    if (scope === "ally" && owner !== controller) continue;
+    if (scope === "enemy" && owner === controller) continue;
+    for (const c of state.players[owner].field) if (c.printed.type === "character") out.push(c);
+  }
+  return out;
+}
+
+/** Resolve a numeric magnitude that may scale with a character count. */
+function dynAmount(state: GameState, ctx: EffectContext, base: number | undefined, per?: AmountPer): number {
+  if (!per) return base ?? 0;
+  let n = charsInScope(state, ctx.controller, per.scope).length;
+  if (per.excludeSelf) n = Math.max(0, n - 1);
+  return n;
+}
+
+/** Apply damage to a character, banishing it (and recording so) if it dies. */
+function hit(state: GameState, ctx: EffectContext, t: CardInstance, amount: number, logs: LogEntry[]): void {
+  t.damage += amount;
+  const loc = findInstance(state, t.instanceId);
+  if (loc && t.damage >= effectiveWillpower(t)) {
+    banishCard(state.players[loc.owner], t, logs, state.turnNumber);
+    ctx.banished?.push({ card: t, owner: loc.owner });
+  }
+}
+
 function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEntry[]): void {
   switch (step.do) {
     case "dealDamage": {
       const t = resolveTarget(state, ctx, step.to);
       if (!t) return;
-      t.damage += step.amount;
-      const loc = findInstance(state, t.instanceId);
-      if (loc && t.damage >= effectiveWillpower(t)) {
-        banishCard(state.players[loc.owner], t, logs, state.turnNumber);
-        ctx.banished?.push({ card: t, owner: loc.owner });
-      }
+      hit(state, ctx, t, dynAmount(state, ctx, step.amount, step.amountPer), logs);
+      break;
+    }
+    case "dealDamageAll": {
+      const amount = step.amount;
+      for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) hit(state, ctx, t, amount, logs);
       break;
     }
     case "removeDamage": {
@@ -206,13 +245,29 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       const t = resolveTarget(state, ctx, step.to);
       if (!t) return;
       const s = step.do === "debuff" ? -1 : 1;
+      const mag = step.amountPer ? dynAmount(state, ctx, undefined, step.amountPer) : null;
       t.appliedEffects.push({
         source: ctx.source.instanceId,
-        strength: step.strength != null ? s * step.strength : undefined,
+        strength: mag != null ? s * mag : step.strength != null ? s * step.strength : undefined,
         willpower: step.willpower != null ? s * step.willpower : undefined,
         lore: step.lore != null ? s * step.lore : undefined,
         duration: step.duration ?? "end_of_turn",
       });
+      break;
+    }
+    case "buffAll":
+    case "debuffAll": {
+      const s = step.do === "debuffAll" ? -1 : 1;
+      for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) {
+        if (step.excludeSelf && t.instanceId === ctx.source.instanceId) continue;
+        t.appliedEffects.push({
+          source: ctx.source.instanceId,
+          strength: step.strength != null ? s * step.strength : undefined,
+          willpower: step.willpower != null ? s * step.willpower : undefined,
+          lore: step.lore != null ? s * step.lore : undefined,
+          duration: step.duration ?? "end_of_turn",
+        });
+      }
       break;
     }
     case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
