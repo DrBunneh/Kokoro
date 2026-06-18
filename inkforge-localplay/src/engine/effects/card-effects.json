@@ -1619,6 +1619,24 @@
   "whatamess": [
     { "trigger": "cost", "free": true, "when": { "haveOwnItem": true } }
   ],
+  "weirdthingsarehappening": [
+    { "trigger": "start_of_turn", "steps": [
+      { "do": "mayConfirm", "text": "put the top card of your deck into your discard?" },
+      { "do": "branchOnMill",
+        "onCharacter": [{ "do": "buff", "to": "self", "strength": 2, "duration": "end_of_turn" }],
+        "onActionItem": [{ "do": "buff", "to": "self", "lore": 2, "duration": "end_of_turn" }],
+        "onLocation": [
+          { "do": "chooseCharacter", "as": "t", "scope": "any", "text": "banish a character" },
+          { "do": "banish", "to": "t" }
+        ]
+      }
+    ] }
+  ],
+  "ancestrallegacy": [],
+  "whatadeal": [],
+  "bigprize": [
+    { "trigger": "on_quest", "steps": [{ "do": "opponentTopByType", "cardType": "character" }] }
+  ],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],

@@ -161,12 +161,18 @@ export type Step =
   | { do: "putToInkwellAll"; scope?: Scope; maxCost?: number }
   // "Choose one" of several sub-effects (Pull the Lever / Wrong Lever).
   | { do: "modal"; options: { label: string; steps: Step[] }[] }
+  // Mill the top card of your deck, then run the branch matching its type
+  // (Jack-Jack Parr "Weird Things Are Happening").
+  | { do: "branchOnMill"; onCharacter?: Step[]; onActionItem?: Step[]; onLocation?: Step[] }
   // "Pay N less for the next matching card you play this turn."
   | { do: "grantDiscount"; amount: number; cardType?: CardType; subtypes?: string[]; uses?: number }
   // Choose a card from a hand (your own, or an opponent's revealed hand):
   | { do: "chooseFromHand"; as: string; from?: "self" | "opponent"; cardType?: CardType; excludeCardType?: CardType; text?: string; optional?: boolean }
   // Each opponent chooses and discards `amount` cards from their own hand.
   | { do: "opponentDiscard"; amount: number; cardType?: CardType; excludeCardType?: CardType }
+  // Each opponent reveals their top card: cards of `cardType` go to their hand,
+  // the rest to the bottom of their deck (Daisy Duck "Big Prize").
+  | { do: "opponentTopByType"; cardType: CardType }
   // Grant the active player an extra ink this turn (Sail the Azurite Sea):
   | { do: "grantExtraInk"; amount?: number }
   // Move a bound (hand) card into the inkwell / discard:
@@ -646,6 +652,16 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       });
       break;
     }
+    case "opponentTopByType": {
+      const opp = state.players[otherPlayer(ctx.controller)];
+      const top = opp.deck.shift();
+      if (top) {
+        if (top.printed.type === step.cardType) opp.hand.push(top);
+        else opp.deck.push(top); // to the bottom
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_DRAWN", message: `Opponent revealed ${top.printed.fullName}`, cardRefs: [{ id: top.printed.id, name: top.printed.fullName }] }));
+      }
+      break;
+    }
     case "grantDiscount": {
       (state.players[ctx.controller].discounts ??= []).push({
         amount: step.amount,
@@ -791,6 +807,22 @@ export function runSteps(
         continue;
       }
       return { steps: steps.slice(i), scope: "any", optional: false, pick: "mode", modes: step.options.map((o) => o.label) };
+    }
+    if (step.do === "branchOnMill") {
+      const p = state.players[ctx.controller];
+      const top = p.deck.shift();
+      if (!top) continue;
+      p.discard.push(top);
+      p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1;
+      ctx.events?.onDiscard?.(ctx.controller);
+      logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_DRAWN", message: `Put ${top.printed.fullName} into discard`, cardRefs: [{ id: top.printed.id, name: top.printed.fullName }] }));
+      const branch = top.printed.type === "character" ? step.onCharacter
+        : top.printed.type === "action" || top.printed.type === "item" || top.printed.type === "song" ? step.onActionItem
+        : top.printed.type === "location" ? step.onLocation
+        : undefined;
+      const susp = runSteps(state, branch ?? [], ctx, logs);
+      if (susp) return susp; // the chosen branch needs its own choice
+      continue;
     }
     if (step.do === "chooseItem") {
       if (pending != null) { ctx.vars[step.as] = pending; pending = undefined; continue; }

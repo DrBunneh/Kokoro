@@ -733,11 +733,17 @@ export function reduce(
       // One ink per turn, plus any granted extra inkings (Sail the Azurite Sea).
       if (next.hasInkedThisTurn && (inkP.extraInk ?? 0) <= 0) throw new GameError("Already inked this turn");
       const p = inkP;
-      const idx = p.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
+      let idx = p.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
+      let fromZone: CardInstance[] = p.hand;
+      // Moana "Ancestral Legacy": you can ink cards from your discard too.
+      if (idx < 0 && p.field.some((c) => c.printed.specialAbilities.some((a) => a.slug === "ancestrallegacy"))) {
+        idx = p.discard.findIndex((c) => c.instanceId === action.cardInstanceId);
+        if (idx >= 0) fromZone = p.discard;
+      }
       if (idx < 0) throw new GameError("Card not in hand");
-      const card = p.hand[idx]!;
+      const card = fromZone[idx]!;
       if (!card.printed.inkable) throw new GameError("Card is not inkable");
-      p.hand.splice(idx, 1);
+      fromZone.splice(idx, 1);
       card.exerted = false;
       card.justPlayed = true; // shown face-up in the inkwell until end of this turn
       p.inkwell.push(card);
@@ -813,6 +819,14 @@ export function reduce(
         fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
         // A sung song pays no ink (≤ 2) → "whenever you pay 2 {I} or less to play a card".
         fireForController(next, "on_play_cheap", next.currentPlayer, logs, effects, banished);
+        // Ursula "What a Deal": a singer may re-play the song from discard for free,
+        // then put it on the bottom of the deck (auto-resolved here).
+        if (singers.some((s) => s.printed.specialAbilities.some((a) => a.slug === "whatadeal"))) {
+          fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, false, banished);
+          const di = p.discard.indexOf(card);
+          if (di >= 0) { p.discard.splice(di, 1); p.deck.push(card); }
+          logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `What a Deal: replayed ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+        }
         drainBanish(next, banished, logs, effects);
         return { state: next, logs };
       }
