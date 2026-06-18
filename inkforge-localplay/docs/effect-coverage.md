@@ -26,9 +26,29 @@ Triggers fired: `on_play`, `on_quest`, `on_challenge`, `on_banish`.
 
 ---
 
-## Mechanics to build (priority order)
+## Shipped so far
+- ✅ **Scry** (`lookAtTop`) incl. filter / optional / keepUpTo — Develop Your Brain,
+  Vision of the Future, How Far I'll Go, Kida (Path Revealed), Ariel‑Spectacular
+  (Musical Debut), Nani, Look at This Family.
+- ✅ **Cost reduction** (`grantDiscount`) — Aurora (Royal Welcome), Akood et Emuti.
+- ✅ **AoE & count-based** (`dealDamageAll`/`buffAll`/`debuffAll`/`amountPer`) —
+  Strength of a Raging Fire, Tinker Bell (Rock the Boat), Cri‑Kee, Kida‑Protector.
+- ✅ **Forced discard** (`chooseFromHand from:opponent` + `opponentDiscard`) —
+  Ursula‑Deceiver, The Bare Necessities, You Have Forgotten Me.
+- ✅ Earlier: banishAll, filtered banish (Brawl / World's Greatest), targeted
+  damage/heal/buff/debuff, return-to-hand, draw/lore, activated abilities,
+  on_play/on_quest/on_challenge/on_banish triggers, may-confirm, choose-from-hand→inkwell.
 
-### 1. 🔧 Forced discard / hand disruption — *biggest + most common bucket*
+Still **manual** within the above buckets: "their choice" *filtered* discards
+(Mowgli), random discard, discard-your-own-hand (Doc / A Whole New World),
+So Be It's item-banish half, self-cost reduction (Olaf / Liquidator / Tramp).
+
+## Mechanics still to build (priority order)
+
+### 1. 🔧 Forced discard / hand disruption — *core done; tails remain*
+Done: caster-picks-from-opponent (filtered), each-opponent-discards-N.
+Remaining: random discard, discard-your-own-hand+draw, "their choice" with a
+type filter, reveal-only, discard-triggered draws (Prince John).
 Needs: opponent-choice discard, "reveal hand & you pick what they discard"
 (filtered by type), random discard, discard-your-own-hand, draw-then-discard.
 In PvP the opponent must make the choice (cross-player prompt); in hot-seat it's
