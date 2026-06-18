@@ -27,6 +27,8 @@ export type Trigger =
   | "on_play_item" // whenever you play an item (for your other cards)
   | "on_play_cheap" // whenever you pay 2 {I} or less to play a card (for your other cards)
   | "on_challenge_banish" // when this character banishes another in a challenge
+  | "on_other_banished" // whenever any character is banished (controller-wide watch)
+  | "on_inkwell_added" // whenever a card is put into your inkwell (controller-wide watch)
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
@@ -81,6 +83,10 @@ export interface Condition {
   lacksCharStrengthAtLeast?: number;
   /** You have played at least N actions/songs this turn (Lilo - Causing an Uproar). */
   actionsPlayedAtLeast?: number;
+  /** (on_other_banished) the banished character had this subtype (Sid — Toy). */
+  banishedSubtype?: string;
+  /** (on_other_banished) the banished character was the watcher's own (Babyhead, Emerald). */
+  banishedMine?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */

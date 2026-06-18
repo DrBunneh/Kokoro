@@ -217,8 +217,11 @@ function hasControllerStatic(state: GameState, owner: PlayerId, slug: string): b
   return state.players[owner].field.some((c) => c.printed.type === "character" && c.printed.specialAbilities.some((a) => a.slug === slug));
 }
 
+/** Optional event context for conditions that reference the triggering event. */
+type EventCtx = { banishedCard?: CardInstance; banishedOwner?: PlayerId };
+
 /** Evaluate an effect's optional gate against the current state. */
-function conditionMet(state: GameState, controller: PlayerId, source: CardInstance, when?: Condition): boolean {
+function conditionMet(state: GameState, controller: PlayerId, source: CardInstance, when?: Condition, ev?: EventCtx): boolean {
   if (!when) return true;
   const p = state.players[controller];
   const played = p.playedThisTurn ?? [];
@@ -267,6 +270,11 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.haveCharStrengthAtLeast != null && !p.field.some((c) => c.printed.type === "character" && effectiveStrength(state, c) >= when.haveCharStrengthAtLeast!)) return false;
   if (when.lacksCharStrengthAtLeast != null && p.field.some((c) => c.printed.type === "character" && effectiveStrength(state, c) >= when.lacksCharStrengthAtLeast!)) return false;
   if (when.actionsPlayedAtLeast != null && played.filter((x) => x.type === "action" || x.type === "song").length < when.actionsPlayedAtLeast) return false;
+  if (when.banishedSubtype) {
+    const want = when.banishedSubtype.toLowerCase();
+    if (!ev?.banishedCard?.printed.subtypes.some((s) => s.toLowerCase() === want)) return false;
+  }
+  if (when.banishedMine && ev?.banishedOwner !== controller) return false;
   return true;
 }
 
@@ -361,6 +369,10 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
   while (queue.length > 0 && guard++ < 64) {
     const { card, owner } = queue.shift()!;
     fireTrigger(state, "on_banish", card, owner, logs, effects, true, queue);
+    // Controller-wide banish watches (Sid "double prizes", Babyhead, Emerald).
+    const ev: EventCtx = { banishedCard: card, banishedOwner: owner };
+    fireWatch(state, "on_other_banished", 1, logs, effects, queue, ev);
+    fireWatch(state, "on_other_banished", 2, logs, effects, queue, ev);
   }
 }
 
@@ -390,6 +402,42 @@ function fireAllyChallenged(
       for (const def of defs) {
         if (!conditionMet(state, owner, c, def.when)) continue;
         const ctx: EffectContext = { controller: owner, source: c, vars: { challenger: attacker.instanceId }, banished };
+        const suspension = runSteps(state, def.steps ?? [], ctx, logs);
+        if (suspension) {
+          state.pendingPrompts.push({
+            id: uid(), player: owner, sourceInstanceId: c.instanceId, kind: sa.slug,
+            text: suspension.text ? `${sa.name}: ${suspension.text}` : `${sa.name}: ${sa.effect}`,
+            auto: false, controller: owner, scope: suspension.scope, pick: suspension.pick,
+            reveal: suspension.reveal, handOwner: suspension.handOwner, modes: suspension.modes,
+            resume: { steps: suspension.steps, vars: ctx.vars },
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Run an `on_*_watch` trigger for each of `owner`'s field characters, resolving
+ * its DSL def (auto, or pushing a choice prompt). Used for controller-wide
+ * watches (banish/inkwell) where the watcher isn't the event's primary source.
+ */
+function fireWatch(
+  state: GameState,
+  trigger: Trigger,
+  owner: PlayerId,
+  logs: LogEntry[],
+  effects: CardEffects,
+  banished?: BanishRef[],
+  ev?: EventCtx,
+): void {
+  for (const c of [...state.players[owner].field]) {
+    if (c.printed.type !== "character") continue;
+    for (const sa of c.printed.specialAbilities) {
+      const defs = (effects[sa.slug] ?? []).filter((d) => d.trigger === trigger);
+      for (const def of defs) {
+        if (!conditionMet(state, owner, c, def.when, ev)) continue;
+        const ctx: EffectContext = { controller: owner, source: c, vars: {}, banished };
         const suspension = runSteps(state, def.steps ?? [], ctx, logs);
         if (suspension) {
           state.pendingPrompts.push({
@@ -589,6 +637,9 @@ export function reduce(
       if (!next.hasInkedThisTurn) next.hasInkedThisTurn = true;
       else p.extraInk -= 1;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PUT_INTO_INKWELL", message: `${p.name} inked ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+      // "Whenever a card is put into your inkwell" (Sapphire Coil "brilliant shine").
+      fireWatch(next, "on_inkwell_added", next.currentPlayer, logs, effects, banished);
+      drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
 

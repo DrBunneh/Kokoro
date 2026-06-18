@@ -1503,5 +1503,24 @@
       { "do": "lockQuest", "to": "t" }
     ] }
   ],
+  "doubleprizes": [
+    { "trigger": "on_other_banished", "when": { "banishedSubtype": "Toy", "onlyYourTurn": true }, "steps": [{ "do": "gainLore", "player": "self", "amount": 2 }] }
+  ],
+  "replacementparts": [
+    { "trigger": "on_other_banished", "when": { "banishedMine": true, "onlyYourTurn": true }, "steps": [{ "do": "draw", "player": "self", "amount": 1 }] }
+  ],
+  "emeraldlight": [
+    { "trigger": "on_other_banished", "when": { "banishedMine": true, "onlyOpponentTurn": true }, "steps": [
+      { "do": "mayConfirm", "text": "return a chosen character to its owner's hand?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "return to hand" },
+      { "do": "returnToHand", "to": "t" }
+    ] }
+  ],
+  "brilliantshine": [
+    { "trigger": "on_inkwell_added", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "give -2 {S} this turn" },
+      { "do": "debuff", "to": "t", "strength": 2, "duration": "end_of_turn" }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

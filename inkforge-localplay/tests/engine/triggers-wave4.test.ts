@@ -63,6 +63,29 @@ describe("Wave 4 — new triggers", () => {
     expect(atkNow.appliedEffects.some((e) => e.strength === -3)).toBe(true);
   });
 
+  it("on_other_banished: a Toy-banish watcher gains lore when any Toy is banished on your turn", () => {
+    const effects: CardEffects = {
+      sid: [{ trigger: "on_other_banished", when: { banishedSubtype: "Toy", onlyYourTurn: true }, steps: [{ do: "gainLore", player: "self", amount: 2 }] }],
+      pop: [{ trigger: "on_play", steps: [{ do: "banish", to: "self" }] }],
+    };
+    const lookup: CardLookup = (id) =>
+      id.includes("-a")
+        ? printed(id, { subtypes: ["Toy"], specialAbilities: [
+            { name: "Sid", slug: "sid", effect: "Whenever a Toy character is banished, gain 2 lore." },
+            { name: "Pop", slug: "pop", effect: "When you play this character, banish him." },
+          ] })
+        : printed(id);
+    let g = toPlay(lookup);
+    // Put a stable watcher (Sid) into play; it won't banish itself because its
+    // on_play pop also fires — so give the watcher only the sid ability via field placement.
+    const watcher = printed("watch-a", { subtypes: ["Toy"], specialAbilities: [{ name: "Sid", slug: "sid", effect: "x" }] });
+    g.players[1].field.push({ instanceId: "w", printed: watcher, damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    // Ink + play a Toy that immediately banishes itself → watcher sees a Toy banished.
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.players[1].lore).toBe(2);
+  });
+
   it("on_challenge_banish fires for the attacker when it banishes the defender", () => {
     const effects: CardEffects = { winner: [{ trigger: "on_challenge_banish", steps: [{ do: "gainLore", player: "self", amount: 2 }] }] };
     const lookup: CardLookup = (id) =>
