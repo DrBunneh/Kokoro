@@ -615,5 +615,40 @@
       ]
     }
   ],
+  "measuremeagain": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseFromHand",
+          "as": "c",
+          "optional": true,
+          "text": "put a card from your hand into your inkwell facedown and exerted"
+        },
+        {
+          "do": "toInkwell",
+          "from": "c",
+          "exerted": true
+        }
+      ]
+    }
+  ],
+  "goaheadandsign": [
+    {
+      "trigger": "activated",
+      "steps": [
+        {
+          "do": "chooseFromHand",
+          "as": "c",
+          "optional": false,
+          "text": "put any card from your hand into your inkwell facedown"
+        },
+        {
+          "do": "toInkwell",
+          "from": "c"
+        }
+      ]
+    }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

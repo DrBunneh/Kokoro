@@ -320,7 +320,10 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         selectedId={selHand}
         canInk={!state.hasInkedThisTurn}
         ink={ink}
-        onCardTap={(c) => setSelHand((id) => (id === c.instanceId ? null : c.instanceId))}
+        onCardTap={(c) => {
+          if (prompt?.resume && prompt.pick === "hand") { dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId }); return; }
+          setSelHand((id) => (id === c.instanceId ? null : c.instanceId));
+        }}
         onInk={(c) => { dispatch({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSelHand(null); }}
         onPlay={(c) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSelHand(null); }}
         onShift={(c, baseId) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: baseId }); setSelHand(null); }}
@@ -365,8 +368,8 @@ function PromptBar({
       <p className="text-amber-50">{prompt.text}</p>
       {prompt.resume ? (
         <div className="flex items-center gap-2">
-          <span className="flex-1 text-amber-200">Tap a character to target.</span>
-          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">No target</button>
+          <span className="flex-1 text-amber-200">{prompt.pick === "hand" ? "Tap a card in your hand." : "Tap a character to target."}</span>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">{prompt.pick === "hand" ? "Skip" : "No target"}</button>
         </div>
       ) : (
         <div className="space-y-1">

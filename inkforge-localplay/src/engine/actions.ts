@@ -181,6 +181,7 @@ function fireTrigger(
             auto: false,
             controller,
             scope: suspension.scope,
+            pick: suspension.pick,
             resume: { steps: suspension.steps, vars: ctx.vars },
           });
         } else {
@@ -470,6 +471,7 @@ export function reduce(
             auto: false,
             controller: next.currentPlayer,
             scope: suspension.scope,
+            pick: suspension.pick,
             resume: { steps: suspension.steps, vars: ctx.vars },
           });
         }
@@ -565,12 +567,19 @@ export function reduce(
           let steps = prompt.resume.steps;
           let inject = action.targetInstanceId;
           const lead = steps[0];
-          if (lead && lead.do === "chooseCharacter") {
+          if (lead && (lead.do === "chooseCharacter" || lead.do === "chooseFromHand")) {
             if (action.targetInstanceId != null) {
-              // Reject an illegal target (wrong scope, or fails the filter).
               const loc = findInstance(next, action.targetInstanceId);
-              if (!loc || loc.zone !== "field" || !targetMatches(loc.card, loc.owner, prompt.controller, lead, effectiveStrength(loc.card))) {
-                throw new GameError("Not a legal target for this ability");
+              if (lead.do === "chooseCharacter") {
+                // Reject an illegal target (wrong scope, or fails the filter).
+                if (!loc || loc.zone !== "field" || !targetMatches(loc.card, loc.owner, prompt.controller, lead, effectiveStrength(loc.card))) {
+                  throw new GameError("Not a legal target for this ability");
+                }
+              } else {
+                // chooseFromHand: the card must be in the resolver's own hand.
+                if (!loc || loc.zone !== "hand" || loc.owner !== prompt.controller) {
+                  throw new GameError("Must choose a card from your hand");
+                }
               }
             } else if (lead.optional) {
               // Declined an optional choice → skip it; dependent steps no-op.
@@ -590,6 +599,7 @@ export function reduce(
               auto: false,
               controller: prompt.controller,
               scope: again.scope,
+              pick: again.pick,
               resume: { steps: again.steps, vars: ctx.vars },
             });
           }

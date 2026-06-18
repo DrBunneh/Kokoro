@@ -35,6 +35,11 @@ export interface TargetFilter {
 export type Step =
   // Targeting (suspends for a tap; binds the chosen instance to `as`):
   | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean; filter?: TargetFilter }
+  // Choose a card from your own hand (suspends for a hand tap):
+  | { do: "chooseFromHand"; as: string; text?: string; optional?: boolean }
+  // Move a bound (hand) card into the inkwell / discard:
+  | { do: "toInkwell"; from: string; exerted?: boolean }
+  | { do: "discardCard"; from: string }
   // Damage:
   | { do: "dealDamage"; to: string; amount: number }
   | { do: "removeDamage"; to: string; amount: number }
@@ -91,6 +96,8 @@ export interface Suspension {
   text?: string;
   optional: boolean;
   filter?: TargetFilter;
+  /** What the resolver picks: a character on the board, or a card from hand. */
+  pick: "character" | "hand";
 }
 
 /**
@@ -182,6 +189,31 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
     case "exert": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = true; break; }
+    case "toInkwell": {
+      const t = resolveTarget(state, ctx, step.from);
+      const loc = t && findInstance(state, t.instanceId);
+      if (t && loc && loc.zone === "hand") {
+        const arr = state.players[loc.owner].hand;
+        const i = arr.indexOf(t);
+        if (i >= 0) arr.splice(i, 1);
+        t.exerted = step.exerted ?? false;
+        t.justPlayed = true; // face-up until end of the turn it was added
+        state.players[loc.owner].inkwell.push(t);
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: loc.owner, type: "CARD_PUT_INTO_INKWELL", message: `Put ${t.printed.fullName} into inkwell`, cardRefs: [{ id: t.printed.id, name: t.printed.fullName }] }));
+      }
+      break;
+    }
+    case "discardCard": {
+      const t = resolveTarget(state, ctx, step.from);
+      const loc = t && findInstance(state, t.instanceId);
+      if (t && loc && loc.zone === "hand") {
+        const arr = state.players[loc.owner].hand;
+        const i = arr.indexOf(t);
+        if (i >= 0) arr.splice(i, 1);
+        state.players[loc.owner].discard.push(t);
+      }
+      break;
+    }
     case "draw": {
       const p = state.players[player(ctx, step.player)];
       drawCards(p, step.amount ?? 1);
@@ -228,7 +260,15 @@ export function runSteps(
         pending = undefined;
         continue;
       }
-      return { steps: steps.slice(i), scope: step.scope ?? "any", text: step.text, optional: step.optional ?? false, filter: step.filter };
+      return { steps: steps.slice(i), scope: step.scope ?? "any", text: step.text, optional: step.optional ?? false, filter: step.filter, pick: "character" };
+    }
+    if (step.do === "chooseFromHand") {
+      if (pending != null) {
+        ctx.vars[step.as] = pending;
+        pending = undefined;
+        continue;
+      }
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "hand" };
     }
     applyStep(state, step, ctx, logs);
   }

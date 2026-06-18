@@ -77,6 +77,8 @@ export interface Prompt {
   resume?: { steps: Step[]; vars: Record<string, string> };
   /** Allowed target scope for the pending choice (UI hint). */
   scope?: Scope;
+  /** What the resolver picks: a board character, or a card from hand. */
+  pick?: "character" | "hand";
 }
 
 export interface GameState {

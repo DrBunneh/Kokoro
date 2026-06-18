@@ -189,6 +189,25 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].field.some((c) => c.instanceId === playId)).toBe(true);
   });
 
+  it("chooseFromHand → toInkwell moves the chosen card into the inkwell", () => {
+    const effects: CardEffects = {
+      stash: [{ trigger: "on_play", steps: [{ do: "chooseFromHand", as: "c", optional: true }, { do: "toInkwell", from: "c", exerted: true }] }],
+    };
+    let g = toPlay(lookupP1Ability("Stash", "stash", "When you play this, you may put a card from your hand into your inkwell exerted."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(1);
+    expect(g.pendingPrompts[0]!.pick).toBe("hand");
+    const inkBefore = g.players[1].inkwell.length;
+    const handCardId = g.players[1].hand[0]!.instanceId;
+    // A board character isn't a legal pick for a hand choice.
+    expect(() => reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: g.players[2].hand[0] ? "nope" : "nope" }, effects)).toThrow();
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: handCardId }, effects).state;
+    expect(g.players[1].inkwell.length).toBe(inkBefore + 1);
+    expect(g.players[1].inkwell.some((c) => c.instanceId === handCardId && c.exerted)).toBe(true);
+    expect(g.players[1].hand.some((c) => c.instanceId === handCardId)).toBe(false);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

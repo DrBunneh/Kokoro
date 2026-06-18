@@ -379,7 +379,13 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
           const singers = c.printed.type === "song" ? greedySingers(c.printed.cost) : [];
           return (
             <div key={c.instanceId} className="shrink-0">
-              <button onClick={() => { setSelField(null); setSelItem(null); setSel((x) => (x === c.instanceId ? null : c.instanceId)); }} className={cn("block w-14 rounded", sel === c.instanceId && "ring-2 ring-ink-sapphire")}><CardThumb card={c.printed} /></button>
+              <button
+                onClick={() => {
+                  if (myPrompt && prompt?.resume && prompt.pick === "hand") { act({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId }); return; }
+                  setSelField(null); setSelItem(null); setSel((x) => (x === c.instanceId ? null : c.instanceId));
+                }}
+                className={cn("block w-14 rounded", sel === c.instanceId && "ring-2 ring-ink-sapphire", myPrompt && prompt?.pick === "hand" && "ring-1 ring-amber-300")}
+              ><CardThumb card={c.printed} /></button>
               {sel === c.instanceId && myTurn && !prompt && (
                 <div className="mt-0.5 flex flex-wrap gap-0.5">
                   <button disabled={s.hasInkedThisTurn || !c.printed.inkable} onClick={() => { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-white/10 text-[10px] disabled:opacity-30">Ink</button>
@@ -449,8 +455,8 @@ function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel 
       <p className="text-amber-50">{prompt.text}</p>
       {prompt.resume ? (
         <div className="flex items-center gap-2">
-          <span className="flex-1 text-amber-200">Tap a character to target.</span>
-          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">No target</button>
+          <span className="flex-1 text-amber-200">{prompt.pick === "hand" ? "Tap a card in your hand." : "Tap a character to target."}</span>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">{prompt.pick === "hand" ? "Skip" : "No target"}</button>
         </div>
       ) : (
         <div className="space-y-1">
