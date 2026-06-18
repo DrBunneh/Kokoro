@@ -35,7 +35,7 @@ export type Action =
   | { type: "CHOOSE_STARTING_PLAYER"; player: PlayerId }
   | { type: "MULLIGAN"; player: PlayerId; cardInstanceIds: string[] }
   | { type: "ADD_TO_INK"; cardInstanceId: string }
-  | { type: "PLAY_CARD"; cardInstanceId: string }
+  | { type: "PLAY_CARD"; cardInstanceId: string; shiftOnto?: string; singers?: string[] }
   | { type: "QUEST"; cardInstanceId: string }
   | { type: "ATTACK"; attackerId: string; defenderId: string }
   | { type: "RESPOND_TO_PROMPT"; promptId: string; targetInstanceId?: string }
@@ -322,6 +322,51 @@ export function reduce(
       const idx = p.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
       if (idx < 0) throw new GameError("Card not in hand");
       const card = p.hand[idx]!;
+
+      // --- Shift: play onto a same-name character for the Shift cost (§10.8) ---
+      if (action.shiftOnto) {
+        const shiftCost = keywordValue(card, "Shift");
+        if (shiftCost <= 0) throw new GameError("Card has no Shift");
+        const base = p.field.find((c) => c.instanceId === action.shiftOnto);
+        if (!base || base.printed.type !== "character") throw new GameError("Shift target not in play");
+        if (base.printed.name !== card.printed.name) throw new GameError("Shift requires a same-named character");
+        if (readyInk(p).length < shiftCost) throw new GameError("Not enough ink");
+        payInk(p, shiftCost);
+        p.hand.splice(idx, 1);
+        // The shifted character inherits damage/readiness and forms a stack.
+        card.damage = base.damage;
+        card.exerted = base.exerted;
+        card.justPlayed = false; // not drying — it's been in play
+        card.cardsUnder = [...base.cardsUnder, base];
+        base.cardsUnder = [];
+        const fi = p.field.indexOf(base);
+        p.field.splice(fi, 1, card);
+        logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} shifted ${card.printed.fullName} onto ${base.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+        fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true);
+        return { state: next, logs };
+      }
+
+      // --- Sing / Sing Together: exert singers to play a song for free (§10.9/10.12) ---
+      if (action.singers && action.singers.length > 0) {
+        if (card.printed.type !== "song") throw new GameError("Only songs can be sung");
+        let singValue = 0;
+        const singers = action.singers.map((sid) => {
+          const s = p.field.find((c) => c.instanceId === sid);
+          if (!s || s.printed.type !== "character") throw new GameError("Singer not in play");
+          if (s.exerted) throw new GameError("Singer is exerted");
+          singValue += Math.max(s.printed.cost, keywordValue(s, "Singer"));
+          return s;
+        });
+        if (singValue < card.printed.cost) throw new GameError("Singers can't afford this song");
+        for (const s of singers) s.exerted = true;
+        p.hand.splice(idx, 1);
+        p.discard.push(card);
+        logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} sang ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+        fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true);
+        return { state: next, logs };
+      }
+
+      // --- Normal play: pay ink ---
       const cost = card.printed.cost;
       if (readyInk(p).length < cost) throw new GameError("Not enough ink");
       payInk(p, cost);
@@ -345,8 +390,6 @@ export function reduce(
           break;
         case "action":
         case "song":
-          // Effects resolve via the DSL / Manual Mode (later WP); the card goes
-          // to discard after resolving.
           p.discard.push(card);
           break;
       }

@@ -4,7 +4,7 @@ import { useDecks } from "@/state/useDecks";
 import { useGame } from "@/state/useGame";
 import { useCardDb } from "@/ui/hooks/useCardDb";
 import { CardThumb } from "@/ui/components/CardThumb";
-import { hasKeyword } from "@/engine/keywords";
+import { hasKeyword, keywordValue } from "@/engine/keywords";
 import { cn } from "@/lib/cn";
 import type { CardInstance, GameState, PlayerId } from "@/engine/state";
 
@@ -286,12 +286,15 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
 
       <HandRow
         cards={meP.hand}
+        field={meP.field}
         selectedId={selHand}
         canInk={!state.hasInkedThisTurn}
         ink={ink}
         onCardTap={(c) => setSelHand((id) => (id === c.instanceId ? null : c.instanceId))}
         onInk={(c) => { dispatch({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSelHand(null); }}
         onPlay={(c) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSelHand(null); }}
+        onShift={(c, baseId) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: baseId }); setSelHand(null); }}
+        onSing={(c, singerIds) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId, singers: singerIds }); setSelHand(null); }}
       />
 
       {/* Quest hint for selected field character is handled by tap above. */}
@@ -395,30 +398,55 @@ function FieldRow({
   );
 }
 
+/** Greedily pick ready singers whose combined value covers a song's cost. */
+function pickSingers(field: CardInstance[], cost: number): string[] {
+  const ids: string[] = [];
+  let value = 0;
+  for (const c of field) {
+    if (c.printed.type !== "character" || c.exerted) continue;
+    value += Math.max(c.printed.cost, keywordValue(c, "Singer"));
+    ids.push(c.instanceId);
+    if (value >= cost) return ids;
+  }
+  return value >= cost ? ids : [];
+}
+
 function HandRow({
-  cards, selectedId, canInk, ink, onCardTap, onInk, onPlay,
+  cards, field, selectedId, canInk, ink, onCardTap, onInk, onPlay, onShift, onSing,
 }: {
   cards: CardInstance[];
+  field: CardInstance[];
   selectedId: string | null;
   canInk: boolean;
   ink: number;
   onCardTap: (c: CardInstance) => void;
   onInk: (c: CardInstance) => void;
   onPlay: (c: CardInstance) => void;
+  onShift: (c: CardInstance, baseId: string) => void;
+  onSing: (c: CardInstance, singerIds: string[]) => void;
 }) {
   return (
     <div className="flex items-end gap-1 overflow-x-auto rounded-lg bg-white/5 p-1">
       {cards.map((c) => {
         const selected = selectedId === c.instanceId;
+        const shiftCost = keywordValue(c, "Shift");
+        const shiftBase = shiftCost > 0 ? field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
+        const singers = c.printed.type === "song" ? pickSingers(field, c.printed.cost) : [];
         return (
           <div key={c.instanceId} className="shrink-0">
             <button onClick={() => onCardTap(c)} className={cn("block w-16 rounded", selected && "ring-2 ring-ink-sapphire")}>
               <CardThumb card={c.printed} />
             </button>
             {selected && (
-              <div className="mt-1 flex gap-0.5">
+              <div className="mt-1 flex flex-wrap gap-0.5">
                 <button disabled={!canInk || !c.printed.inkable} onClick={() => onInk(c)} className="flex-1 rounded bg-white/10 px-1 text-[10px] disabled:opacity-30">Ink</button>
                 <button disabled={ink < c.printed.cost} onClick={() => onPlay(c)} className="flex-1 rounded bg-ink-sapphire px-1 text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
+                {shiftBase && ink >= shiftCost && (
+                  <button onClick={() => onShift(c, shiftBase.instanceId)} className="flex-1 rounded bg-ink-amethyst/70 px-1 text-[10px] text-white">Shift {shiftCost}</button>
+                )}
+                {singers.length > 0 && (
+                  <button onClick={() => onSing(c, singers)} className="flex-1 rounded bg-ink-emerald/70 px-1 text-[10px] text-white">Sing</button>
+                )}
               </div>
             )}
           </div>
