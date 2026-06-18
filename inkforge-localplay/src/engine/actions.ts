@@ -261,6 +261,8 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   }
   if (when.onlyYourTurn && state.currentPlayer !== controller) return false;
   if (when.onlyOpponentTurn && state.currentPlayer === controller) return false;
+  if (when.haveCharStrengthAtLeast != null && !p.field.some((c) => c.printed.type === "character" && effectiveStrength(state, c) >= when.haveCharStrengthAtLeast!)) return false;
+  if (when.lacksCharStrengthAtLeast != null && p.field.some((c) => c.printed.type === "character" && effectiveStrength(state, c) >= when.lacksCharStrengthAtLeast!)) return false;
   return true;
 }
 

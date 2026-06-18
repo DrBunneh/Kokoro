@@ -1438,5 +1438,22 @@
   "rejectedtoys": [
     { "trigger": "cost", "reduceSubtypeInDiscard": "Toy" }
   ],
+  "buzzingenthusiasm": [
+    { "trigger": "on_quest", "steps": [
+      { "do": "mayConfirm", "text": "add his {W} to another character's {S} this turn?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "add {W} to its {S}" },
+      { "do": "buffBySourceStat", "to": "t", "stat": "willpower" }
+    ] }
+  ],
+  "flexiblethinking": [
+    { "trigger": "start_of_turn", "steps": [{ "do": "modal", "options": [
+      { "label": "Gain Evasive until your next turn", "steps": [{ "do": "grantKeyword", "to": "self", "keyword": "Evasive", "duration": "untilNextTurn" }] },
+      { "label": "+1 {L} this turn", "steps": [{ "do": "buff", "to": "self", "lore": 1, "duration": "end_of_turn" }] }
+    ] }] }
+  ],
+  "royallybigrewards": [
+    { "trigger": "end_of_turn", "when": { "haveCharStrengthAtLeast": 10 }, "steps": [{ "do": "gainLore", "player": "self", "amount": 5 }] },
+    { "trigger": "end_of_turn", "when": { "haveCharStrengthAtLeast": 5, "lacksCharStrengthAtLeast": 10 }, "steps": [{ "do": "gainLore", "player": "self", "amount": 2 }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { effectiveStrength, effectiveLore, effectiveWillpower, keywordValue } from "@/engine/keywords";
+import { statMods } from "@/engine/continuous";
 import type { CardInstance, GameState } from "@/engine/state";
 import type { PrintedCard } from "@/data/card-types";
 
@@ -91,6 +92,16 @@ describe("Wave 3 — scaling & gated statics", () => {
     expect(effectiveStrength(bare, herc)).toBe(4);
     herc.cardsUnder = [inst("u", printed())];
     expect(effectiveStrength(bare, herc)).toBe(7);
+  });
+
+  it("Peter Pan 'flyofcourse': your other Evasive characters gain Rush (not non-Evasive ones)", () => {
+    const peter = inst("p", printed({ specialAbilities: SA("flyofcourse") }));
+    const flyer = inst("f", printed({ abilities: [{ ability: "Evasive" }] }));
+    const grounded = inst("g", printed());
+    const g = state({ field: [peter, flyer, grounded] });
+    const hasRush = (c: CardInstance) => statMods(g, c).keywords.some((k) => k.name === "Rush");
+    expect(hasRush(flyer)).toBe(true);
+    expect(hasRush(grounded)).toBe(false);
   });
 
   it("Mickey 'leadingtheway': other Amber characters get +2 {W} (not self)", () => {

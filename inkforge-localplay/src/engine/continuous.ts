@@ -39,6 +39,8 @@ export interface StaticDef {
   perCardUnder?: boolean;
   /** Only while there's at least one card under the source (Hercules-Spectral, Flynn). */
   whileHasCardUnder?: boolean;
+  /** Only applies to targets that already have this keyword (Peter Pan — Evasive → Rush). */
+  targetHasKeyword?: string;
   /** Only while the source is exerted (Pete - Space Pirate). */
   whileExerted?: boolean;
   /** Only during the opponents' turns (Snow Fort "Barricade"). */
@@ -106,6 +108,16 @@ function applies(def: StaticDef, source: CardInstance, srcOwner: PlayerId, targe
   }
 }
 
+/** Does a card have a keyword from its printed abilities or a one-shot grant?
+ * (Continuous-granted keywords are excluded to avoid recursion into statMods.) */
+function targetHasPrintedKeyword(card: CardInstance, keyword: string): boolean {
+  const want = keyword.toLowerCase();
+  return (
+    card.printed.abilities.some((a) => a.ability.toLowerCase().startsWith(want)) ||
+    card.appliedEffects.some((e) => e.keyword?.toLowerCase() === want)
+  );
+}
+
 /** Count the controller's other characters in play (optionally of a subtype). */
 function otherChars(state: GameState, owner: PlayerId, source: CardInstance, subtype?: string): number {
   return state.players[owner].field.filter(
@@ -133,6 +145,7 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
         if (def.whileOtherCharsAtLeast != null && otherChars(state, srcOwner, src, def.otherSubtype) < def.whileOtherCharsAtLeast) continue;
         if (def.whileControllerHasSubtype && !state.players[srcOwner].field.some((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => s.toLowerCase() === def.whileControllerHasSubtype!.toLowerCase()))) continue;
         if (def.whileHasCardUnder && src.cardsUnder.length === 0) continue;
+        if (def.targetHasKeyword && !targetHasPrintedKeyword(card, def.targetHasKeyword)) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
         const scale = def.perDiscard
           ? state.players[srcOwner].discard.length

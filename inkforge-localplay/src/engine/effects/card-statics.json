@@ -25,5 +25,6 @@
   "superhumanstrength": [{ "scope": "self", "strength": 3, "whileHasCardUnder": true }],
   "illtakethat": [{ "scope": "self", "strength": 2, "lore": 1, "whileHasCardUnder": true }],
   "goodbusiness": [{ "scope": "self", "willpower": 1, "lore": 1, "perCardUnder": true }],
+  "flyofcourse": [{ "scope": "yours", "excludeSelf": true, "keyword": "Rush", "targetHasKeyword": "Evasive" }],
   "$schema": "slug -> StaticDef[] (continuous modifiers). slugs use build-card-db slugify."
 }

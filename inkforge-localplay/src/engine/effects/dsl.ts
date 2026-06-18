@@ -70,6 +70,10 @@ export interface Condition {
   onlyYourTurn?: boolean;
   /** It's currently an opponent's turn (Rex). */
   onlyOpponentTurn?: boolean;
+  /** You have a character in play with at least this {S} (Maximus). */
+  haveCharStrengthAtLeast?: number;
+  /** You have NO character in play with this {S} or more (Maximus "instead" tier). */
+  lacksCharStrengthAtLeast?: number;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -155,6 +159,8 @@ export type Step =
   // Area stat change to every character in scope (optionally excluding the source):
   | { do: "buffAll" | "debuffAll"; scope?: Scope; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; excludeSelf?: boolean }
   | { do: "ready" | "exert"; to: string }
+  // Add the source's own {S}/{W} to a bound target's strength this turn (Zipper, Support-like):
+  | { do: "buffBySourceStat"; to: string; stat: "strength" | "willpower" }
   // Exert every character in scope (Demona):
   | { do: "exertAll"; scope?: Scope }
   // Grant a keyword to a target for this turn / permanently:
@@ -413,6 +419,13 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
           castBy: ctx.controller,
         });
       }
+      break;
+    }
+    case "buffBySourceStat": {
+      const t = resolveTarget(state, ctx, step.to);
+      if (!t) return;
+      const amt = step.stat === "willpower" ? effectiveWillpower(state, ctx.source) : effectiveStrength(state, ctx.source);
+      if (amt !== 0) t.appliedEffects.push({ source: ctx.source.instanceId, strength: amt, duration: "end_of_turn", castBy: ctx.controller });
       break;
     }
     case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
