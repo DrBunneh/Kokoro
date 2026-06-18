@@ -374,6 +374,12 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   state.players[player].extraInk = 0;
   state.endStepDone = false;
   state.usedActivated = [];
+  // "Until the start of your next turn" effects expire when their caster's turn begins.
+  for (const pid of [1, 2] as PlayerId[]) {
+    for (const c of [...state.players[pid].field, ...state.players[pid].items]) {
+      c.appliedEffects = c.appliedEffects.filter((e) => !(e.duration === "untilNextTurn" && e.castBy === player));
+    }
+  }
   // A lockout ("opponents can't play …") expires when its caster's turn begins.
   if (state.lockout && state.lockout.caster === player) delete state.lockout;
   const p = state.players[player];

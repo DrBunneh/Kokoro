@@ -14,23 +14,42 @@ import type { CardInstance, GameState, PlayerId } from "./state";
 
 export interface StaticDef {
   /** Who the modifier applies to, relative to the source's controller. */
-  scope: "self" | "yours" | "yoursSubtype" | "opponents";
+  scope: "self" | "yours" | "yoursSubtype" | "yoursColor" | "opponents";
   /** Subtype filter for scope "yoursSubtype" (e.g. "Pirate"). */
   subtype?: string;
+  /** Color filter for scope "yoursColor" (e.g. "amber"). */
+  color?: string;
   strength?: number;
   willpower?: number;
   lore?: number;
   /** Grant a keyword (with optional stacking value, e.g. Resist +1). */
   keyword?: string;
   keywordValue?: number;
+  /** Don't apply the modifier to the source itself (for team scopes — "your other …"). */
+  excludeSelf?: boolean;
   /** The value scales with the source controller's discard size (Namaari). */
   perDiscard?: boolean;
+  /** Scale with the number of the controller's *other* characters (Mr. Incredible). */
+  perOther?: boolean;
+  /** Scale with the controller's other characters of this subtype (Alien — Toy). */
+  perOtherSubtype?: string;
+  /** Scale with the number of items the controller has in play (Tamatoa — glam). */
+  perItem?: boolean;
   /** Only while the source is exerted (Pete - Space Pirate). */
   whileExerted?: boolean;
   /** Only during the opponents' turns (Snow Fort "Barricade"). */
   onlyOpponentTurn?: boolean;
   /** Only while the source's (raw) strength is at least this (Lady "Take the Lead"). */
   whileSelfStrengthAtLeast?: number;
+  /** Only while the controller holds no cards (Angel - Experiment 624). */
+  whileNoHand?: boolean;
+  /** Only while the source has no damage (Rhino - Power Hamster). */
+  whileSelfUndamaged?: boolean;
+  /** Only while the controller has at least N other characters (optionally of `otherSubtype`). */
+  whileOtherCharsAtLeast?: number;
+  otherSubtype?: string;
+  /** Only while the controller has a character of this subtype in play (Diablo - Stone Servant — Villain). */
+  whileControllerHasSubtype?: string;
 }
 
 /** Strength excluding continuous mods — used by self-referential static conditions. */
@@ -68,14 +87,27 @@ function applies(def: StaticDef, source: CardInstance, srcOwner: PlayerId, targe
     case "self":
       return source.instanceId === target.instanceId;
     case "yours":
+      if (def.excludeSelf && source.instanceId === target.instanceId) return false;
       return tgtOwner === srcOwner && target.printed.type === "character";
     case "yoursSubtype":
+      if (def.excludeSelf && source.instanceId === target.instanceId) return false;
       return tgtOwner === srcOwner && target.printed.type === "character" && !!def.subtype && target.printed.subtypes.some((s) => s.toLowerCase() === def.subtype!.toLowerCase());
+    case "yoursColor":
+      if (def.excludeSelf && source.instanceId === target.instanceId) return false;
+      return tgtOwner === srcOwner && target.printed.type === "character" && !!def.color && target.printed.colors.some((c) => c.toLowerCase() === def.color!.toLowerCase());
     case "opponents":
       return tgtOwner !== srcOwner && target.printed.type === "character";
     default:
       return false;
   }
+}
+
+/** Count the controller's other characters in play (optionally of a subtype). */
+function otherChars(state: GameState, owner: PlayerId, source: CardInstance, subtype?: string): number {
+  return state.players[owner].field.filter(
+    (c) => c.printed.type === "character" && c.instanceId !== source.instanceId &&
+      (!subtype || c.printed.subtypes.some((s) => s.toLowerCase() === subtype.toLowerCase())),
+  ).length;
 }
 
 /** Aggregate every continuous modifier affecting `card` right now. */
@@ -92,8 +124,20 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
         if (def.whileExerted && !src.exerted) continue;
         if (def.onlyOpponentTurn && state.currentPlayer === srcOwner) continue;
         if (def.whileSelfStrengthAtLeast != null && rawStrength(src) < def.whileSelfStrengthAtLeast) continue;
+        if (def.whileNoHand && state.players[srcOwner].hand.length > 0) continue;
+        if (def.whileSelfUndamaged && src.damage > 0) continue;
+        if (def.whileOtherCharsAtLeast != null && otherChars(state, srcOwner, src, def.otherSubtype) < def.whileOtherCharsAtLeast) continue;
+        if (def.whileControllerHasSubtype && !state.players[srcOwner].field.some((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => s.toLowerCase() === def.whileControllerHasSubtype!.toLowerCase()))) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
-        const scale = def.perDiscard ? state.players[srcOwner].discard.length : 1;
+        const scale = def.perDiscard
+          ? state.players[srcOwner].discard.length
+          : def.perItem
+            ? state.players[srcOwner].items.length
+            : def.perOther
+              ? otherChars(state, srcOwner, src)
+              : def.perOtherSubtype
+                ? otherChars(state, srcOwner, src, def.perOtherSubtype)
+                : 1;
         if (def.strength) strength += def.strength * scale;
         if (def.willpower) willpower += def.willpower * scale;
         if (def.lore) lore += def.lore * scale;

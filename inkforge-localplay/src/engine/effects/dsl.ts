@@ -8,7 +8,7 @@
 import { otherPlayer, type CardInstance, type GameState, type PlayerId } from "../state";
 import { makeLog, type LogEntry } from "../replay";
 import { banishCard, drawCards, findInstance } from "../zones";
-import { effectiveStrength, effectiveWillpower } from "../keywords";
+import { effectiveStrength, effectiveWillpower, effectiveLore } from "../keywords";
 import { Rng } from "../rng";
 import { uid } from "@/lib/id";
 import type { CardType } from "@/data/card-types";
@@ -63,6 +63,8 @@ export interface TargetFilter {
   minStrength?: number;
   maxCost?: number;
   subtype?: string;
+  /** Target must be exerted (Pocahontas — "another chosen exerted character"). */
+  exerted?: boolean;
 }
 
 /** Restricts which revealed deck cards a scry may keep (e.g. "a song card"). */
@@ -91,8 +93,9 @@ export type Step =
   // optionally filtered) in hand, send the rest to the bottom or inkwell. When
   // `optional`, the player may keep none.
   | { do: "lookAtTop"; count: number; rest?: "bottom" | "inkwellExerted"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
-  // Banish every character (Be Prepared) — or a scoped subset.
-  | { do: "banishAll"; scope?: Scope }
+  // Banish every character (Be Prepared) — or a scoped subset, optionally
+  // limited to damaged characters or those at/under a strength (Prince Phillip / Sisu).
+  | { do: "banishAll"; scope?: Scope; damaged?: boolean; maxStrength?: number }
   // Put every matching character in scope on the bottom of their deck (Under the Sea).
   | { do: "toBottomAll"; scope?: Scope; maxStrength?: number }
   // Put every matching character into its owner's inkwell, exerted (Spooky Sight).
@@ -117,20 +120,22 @@ export type Step =
   | { do: "removeDamageDraw"; to: string; amount: number }
   // Gain lore equal to the source's strength, optionally capped (Mulan):
   | { do: "gainLoreByStrength"; max?: number }
+  // Gain lore equal to a bound character's stat (Pocahontas {L} / Go Go damage / Lucky Dime {L}):
+  | { do: "gainLoreEqual"; from: string; stat: "lore" | "damage" | "strength" }
   // Area damage to every character in scope:
   | { do: "dealDamageAll"; scope?: Scope; amount: number }
   // Movement / removal:
   | { do: "banish"; to: string }
   | { do: "returnToHand"; to: string }
   // Stats (until end of turn unless duration given):
-  | { do: "buff" | "debuff"; to: string; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent"; amountPer?: AmountPer }
+  | { do: "buff" | "debuff"; to: string; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; amountPer?: AmountPer }
   // Area stat change to every character in scope (optionally excluding the source):
-  | { do: "buffAll" | "debuffAll"; scope?: Scope; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent"; excludeSelf?: boolean }
+  | { do: "buffAll" | "debuffAll"; scope?: Scope; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; excludeSelf?: boolean }
   | { do: "ready" | "exert"; to: string }
   // Exert every character in scope (Demona):
   | { do: "exertAll"; scope?: Scope }
   // Grant a keyword to a target for this turn / permanently:
-  | { do: "grantKeyword"; to: string; keyword: string; value?: number; duration?: "end_of_turn" | "permanent" }
+  | { do: "grantKeyword"; to: string; keyword: string; value?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn" }
   // Move up to `amount` damage counters from one bound target to another:
   | { do: "moveDamage"; from: string; to: string; amount: number }
   // Zone control on a bound character:
@@ -146,8 +151,8 @@ export type Step =
   | { do: "randomDiscard"; amount: number }
   // Opponents can't play actions (or items) until your next turn:
   | { do: "lockout"; items?: boolean }
-  // Cards / lore:
-  | { do: "draw"; player?: Who; amount?: number; amountPer?: AmountPer }
+  // Cards / lore ("each" draws for both players — Amethyst Chromicon / Donald):
+  | { do: "draw"; player?: Who | "each"; amount?: number; amountPer?: AmountPer }
   | { do: "drawTo"; player?: Who; count: number }
   // Choose and discard from your own hand `amount` (or per-count) cards:
   | { do: "discardChoose"; amount?: number; amountPer?: AmountPer; text?: string }
@@ -244,6 +249,7 @@ export function targetMatches(
     if (f.minStrength != null && strength < f.minStrength) return false;
     if (f.maxCost != null && card.printed.cost > f.maxCost) return false;
     if (f.subtype && !card.printed.subtypes.some((s) => s.toLowerCase() === f.subtype!.toLowerCase())) return false;
+    if (f.exerted && !card.exerted) return false;
   }
   return true;
 }
@@ -318,6 +324,16 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       if (amt > 0) state.players[ctx.controller].lore += amt;
       break;
     }
+    case "gainLoreEqual": {
+      const t = resolveTarget(state, ctx, step.from);
+      if (!t) return;
+      const amt = step.stat === "damage" ? t.damage : step.stat === "strength" ? effectiveStrength(state, t) : effectiveLore(state, t);
+      if (amt > 0) {
+        state.players[ctx.controller].lore += amt;
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "LORE_GAINED", message: `Gain ${amt} lore`, data: { lore: state.players[ctx.controller].lore } }));
+      }
+      break;
+    }
     case "banish": {
       const t = resolveTarget(state, ctx, step.to);
       const loc = t && findInstance(state, t.instanceId);
@@ -351,6 +367,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         willpower: step.willpower != null ? s * step.willpower : undefined,
         lore: step.lore != null ? s * step.lore : undefined,
         duration: step.duration ?? "end_of_turn",
+        castBy: ctx.controller,
       });
       break;
     }
@@ -365,6 +382,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
           willpower: step.willpower != null ? s * step.willpower : undefined,
           lore: step.lore != null ? s * step.lore : undefined,
           duration: step.duration ?? "end_of_turn",
+          castBy: ctx.controller,
         });
       }
       break;
@@ -377,7 +395,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "grantKeyword": {
       const t = resolveTarget(state, ctx, step.to);
-      if (t) t.appliedEffects.push({ source: ctx.source.instanceId, keyword: step.keyword, keywordValue: step.value, duration: step.duration ?? "end_of_turn" });
+      if (t) t.appliedEffects.push({ source: ctx.source.instanceId, keyword: step.keyword, keywordValue: step.value, duration: step.duration ?? "end_of_turn", castBy: ctx.controller });
       break;
     }
     case "moveDamage": {
@@ -534,7 +552,12 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       for (const owner of [1, 2] as PlayerId[]) {
         if (scope === "ally" && owner !== ctx.controller) continue;
         if (scope === "enemy" && owner === ctx.controller) continue;
-        const chars = state.players[owner].field.filter((c) => c.printed.type === "character");
+        const chars = state.players[owner].field.filter((c) => {
+          if (c.printed.type !== "character") return false;
+          if (step.damaged && c.damage <= 0) return false;
+          if (step.maxStrength != null && effectiveStrength(state, c) > step.maxStrength) return false;
+          return true;
+        });
         for (const c of chars) {
           banishCard(state.players[owner], c, logs, state.turnNumber);
           ctx.banished?.push({ card: c, owner });
@@ -543,10 +566,13 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "draw": {
-      const p = state.players[player(ctx, step.player)];
       const n = step.amountPer ? dynAmount(state, ctx, step.amount, step.amountPer) : (step.amount ?? 1);
-      if (n > 0) drawCards(p, n);
-      logs.push(makeLog({ turnNumber: state.turnNumber, player: player(ctx, step.player), type: "CARD_DRAWN", message: `Draw ${n}` }));
+      if (n <= 0) break;
+      const targets: PlayerId[] = step.player === "each" ? [ctx.controller, otherPlayer(ctx.controller)] : [player(ctx, step.player)];
+      for (const pid of targets) {
+        drawCards(state.players[pid], n);
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: pid, type: "CARD_DRAWN", message: `Draw ${n}` }));
+      }
       break;
     }
     case "playFromDiscard": {

@@ -1036,5 +1036,175 @@
       { "do": "playFromDiscard", "exerted": true }
     ] }
   ],
+
+  "loosechange": [
+    { "trigger": "activated", "steps": [{ "do": "grantDiscount", "amount": 1, "cardType": "character", "uses": 1 }] }
+  ],
+  "birthdaylights": [
+    { "trigger": "activated", "steps": [{ "do": "grantDiscount", "amount": 1, "cardType": "character", "uses": 1 }] }
+  ],
+  "gesundheit": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "text": "give +1 lore this turn" },
+      { "do": "buff", "to": "t", "lore": 1, "duration": "end_of_turn" }
+    ] }
+  ],
+  "contagiousenergy": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "text": "give +1 {S} this turn" },
+      { "do": "buff", "to": "t", "strength": 1, "duration": "end_of_turn" }
+    ] }
+  ],
+  "wheredoisignin": [
+    { "trigger": "on_play", "steps": [
+      { "do": "draw", "player": "self", "amount": 1 },
+      { "do": "discardChoose", "amount": 1, "text": "choose a card to discard" }
+    ] }
+  ],
+  "unearth": [
+    { "trigger": "on_quest", "steps": [
+      { "do": "mayConfirm", "text": "draw 2, then discard 2?" },
+      { "do": "draw", "player": "self", "amount": 2 },
+      { "do": "discardChoose", "amount": 2, "text": "choose 2 cards to discard" }
+    ] }
+  ],
+  "bringontheheat": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "filter": { "maxStrength": 1 }, "text": "banish an opposing character with 1 {S} or less" },
+      { "do": "banish", "to": "t" }
+    ] }
+  ],
+  "leavesnotrace": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "filter": { "maxStrength": 2 }, "text": "banish an opposing character with 2 {S} or less" },
+      { "do": "banish", "to": "t" }
+    ] }
+  ],
+  "wehaveachoice": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "banish chosen item?" },
+      { "do": "chooseItem", "as": "i", "scope": "any", "optional": true, "text": "banish an item" },
+      { "do": "banish", "to": "i" }
+    ] }
+  ],
+  "chillout": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "text": "exert an opposing character" },
+      { "do": "exert", "to": "t" }
+    ] }
+  ],
+  "feelthepower": [
+    { "trigger": "activated", "steps": [{ "do": "drawTo", "player": "self", "count": 3 }] }
+  ],
+  "tinyhowl": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "text": "-1 {S} until your next turn" },
+      { "do": "debuff", "to": "t", "strength": 1, "duration": "untilNextTurn" }
+    ] }
+  ],
+  "justwhatyouneed": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "give another character Resist +1 until your next turn?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "grant Resist +1" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Resist", "value": 1, "duration": "untilNextTurn" }
+    ] }
+  ],
+  "pickyourfights": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "give Reckless during their next turn" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Reckless", "duration": "untilNextTurn" }
+    ] },
+    { "trigger": "on_quest", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "give Reckless during their next turn" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Reckless", "duration": "untilNextTurn" }
+    ] }
+  ],
+  "swiftandsure": [
+    { "trigger": "on_play", "steps": [{ "do": "banishAll", "scope": "enemy", "damaged": true }] }
+  ],
+  "igotthis": [
+    { "trigger": "on_play", "steps": [{ "do": "banishAll", "scope": "enemy", "maxStrength": 2 }] }
+  ],
+  "amethystlight": [
+    { "trigger": "activated", "steps": [{ "do": "draw", "player": "each", "amount": 1 }] }
+  ],
+  "allowme": [
+    { "trigger": "start_of_turn", "steps": [{ "do": "draw", "player": "each", "amount": 1 }] }
+  ],
+  "whatismypath": [
+    { "trigger": "on_quest", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "filter": { "exerted": true }, "text": "gain lore equal to an exerted character's lore" },
+      { "do": "gainLoreEqual", "from": "t", "stat": "lore" }
+    ] }
+  ],
+  "numberone": [
+    { "trigger": "activated", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "text": "gain lore equal to their lore" },
+      { "do": "gainLoreEqual", "from": "t", "stat": "lore" }
+    ] }
+  ],
+  "stopwhiningwomanup": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "pay 2 {I}: gain lore equal to damage on chosen opposing character?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "gain lore equal to its damage" },
+      { "do": "gainLoreEqual", "from": "t", "stat": "damage" }
+    ] }
+  ],
+  "battlewound": [
+    { "trigger": "on_play", "steps": [{ "do": "dealDamage", "to": "self", "amount": 2 }] }
+  ],
+  "longjourney": [
+    { "trigger": "on_play", "steps": [{ "do": "exert", "to": "self" }] }
+  ],
+  "almostready": [
+    { "trigger": "on_play", "steps": [{ "do": "exert", "to": "self" }] }
+  ],
+  "asleep": [
+    { "trigger": "on_play", "steps": [{ "do": "exert", "to": "self" }] }
+  ],
+  "preflightcheck": [
+    { "trigger": "on_play", "steps": [{ "do": "draw", "player": "self", "amount": 1 }] }
+  ],
+  "resourceful": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "mysteriousadvantage": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "discard a card to gain 2 lore?" },
+      { "do": "discardChoose", "amount": 1, "text": "discard a card" },
+      { "do": "gainLore", "player": "self", "amount": 2 }
+    ] }
+  ],
+  "heroicsacrifice": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "discard your hand, then return a card from your discard?" },
+      { "do": "discardHandDraw", "player": "self", "draw": 0 },
+      { "do": "returnFromDiscard", "keepUpTo": 1, "optional": false, "text": "return a card to your hand" }
+    ] }
+  ],
+  "therewasonlyocean": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 2, "keepUpTo": 1, "rest": "bottom", "optional": true }] }
+  ],
+  "fortunehunter": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "cardType": "item" } }] }
+  ],
+  "mygreatestperformance": [
+    { "trigger": "on_quest", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "cardType": "action", "maxCost": 6 } }] }
+  ],
+  "takecharge": [
+    { "trigger": "on_play", "steps": [{ "do": "returnFromDiscard", "cardType": "action", "maxCost": 7, "keepUpTo": 1, "optional": true, "text": "return an action from your discard" }] }
+  ],
+  "takeagoodlook": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseFromHand", "as": "t", "from": "opponent", "cardType": "action", "optional": true, "text": "discard an action from the opponent's hand" },
+      { "do": "discardCard", "from": "t" }
+    ] }
+  ],
+  "maliciousmeanandscary": [
+    { "trigger": "on_play", "steps": [{ "do": "dealDamageAll", "scope": "enemy", "amount": 1 }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

@@ -5,5 +5,16 @@
   "frightfulscheme": [{ "scope": "yoursSubtype", "subtype": "Pirate", "keyword": "Resist", "keywordValue": 1, "whileExerted": true }],
   "sinisterplot": [{ "scope": "self", "lore": 1 }],
   "takethelead": [{ "scope": "self", "lore": 2, "whileSelfStrengthAtLeast": 3 }],
+  "alwaysunited": [{ "scope": "self", "strength": 2, "perOther": true }],
+  "weareone": [{ "scope": "self", "strength": 1, "perOtherSubtype": "Toy" }],
+  "glam": [{ "scope": "self", "lore": 1, "perItem": true }],
+  "andimthecaptain": [{ "scope": "self", "lore": 2, "whileOtherCharsAtLeast": 2 }],
+  "untouchable": [{ "scope": "self", "keyword": "Resist", "keywordValue": 2, "whileNoHand": true }],
+  "epicballofawesome": [{ "scope": "self", "keyword": "Resist", "keywordValue": 2, "whileSelfUndamaged": true }],
+  "cruelintent": [{ "scope": "self", "strength": 2, "lore": 1, "whileControllerHasSubtype": "Villain" }],
+  "leadingtheway": [{ "scope": "yoursColor", "color": "amber", "willpower": 2, "excludeSelf": true }],
+  "begrateful": [{ "scope": "yoursSubtype", "subtype": "Ally", "strength": 1 }],
+  "everyonegatherround": [{ "scope": "yoursSubtype", "subtype": "Toy", "willpower": 1, "excludeSelf": true }],
+  "airsupport": [{ "scope": "yours", "keyword": "Support" }],
   "$schema": "slug -> StaticDef[] (continuous modifiers). slugs use build-card-db slugify."
 }

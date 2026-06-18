@@ -24,8 +24,10 @@ export interface AppliedEffect {
   keyword?: string;
   /** Numeric value for a stacking granted keyword (e.g. Challenger +3). */
   keywordValue?: number;
-  /** When the effect expires. */
-  duration: "end_of_turn" | "permanent";
+  /** When the effect expires. "untilNextTurn" lasts until `castBy`'s next turn begins. */
+  duration: "end_of_turn" | "permanent" | "untilNextTurn";
+  /** The player who applied this effect — used to expire "untilNextTurn" effects. */
+  castBy?: PlayerId;
 }
 
 export interface CardInstance {
