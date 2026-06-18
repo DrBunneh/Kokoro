@@ -147,8 +147,12 @@ export type Step =
   // Opponents can't play actions (or items) until your next turn:
   | { do: "lockout"; items?: boolean }
   // Cards / lore:
-  | { do: "draw"; player?: Who; amount?: number }
+  | { do: "draw"; player?: Who; amount?: number; amountPer?: AmountPer }
   | { do: "drawTo"; player?: Who; count: number }
+  // Choose and discard from your own hand `amount` (or per-count) cards:
+  | { do: "discardChoose"; amount?: number; amountPer?: AmountPer; text?: string }
+  // Play the source card from your discard into play (Lilo - Escape Artist):
+  | { do: "playFromDiscard"; exerted?: boolean }
   | { do: "discard"; player?: Who; amount?: number }
   | { do: "gainLore" | "loseLore"; player?: Who; amount?: number };
 
@@ -540,8 +544,21 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "draw": {
       const p = state.players[player(ctx, step.player)];
-      drawCards(p, step.amount ?? 1);
-      logs.push(makeLog({ turnNumber: state.turnNumber, player: player(ctx, step.player), type: "CARD_DRAWN", message: `Draw ${step.amount ?? 1}` }));
+      const n = step.amountPer ? dynAmount(state, ctx, step.amount, step.amountPer) : (step.amount ?? 1);
+      if (n > 0) drawCards(p, n);
+      logs.push(makeLog({ turnNumber: state.turnNumber, player: player(ctx, step.player), type: "CARD_DRAWN", message: `Draw ${n}` }));
+      break;
+    }
+    case "playFromDiscard": {
+      const src = ctx.source;
+      const p = state.players[ctx.controller];
+      const i = p.discard.indexOf(src);
+      if (i >= 0) {
+        p.discard.splice(i, 1);
+        src.damage = 0; src.exerted = step.exerted ?? false; src.justPlayed = true; src.appliedEffects = [];
+        p.field.push(src);
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_PLAYED", message: `Played ${src.printed.fullName} from discard`, cardRefs: [{ id: src.printed.id, name: src.printed.fullName }] }));
+      }
       break;
     }
     case "drawTo": {
@@ -613,6 +630,31 @@ export function runSteps(
     if (step.do === "chooseItem") {
       if (pending != null) { ctx.vars[step.as] = pending; pending = undefined; continue; }
       return { steps: steps.slice(i), scope: step.scope ?? "any", text: step.text, optional: step.optional ?? false, pick: "item" };
+    }
+    if (step.do === "discardChoose") {
+      const p = state.players[ctx.controller];
+      const ns = "__dcRemain";
+      if (pending != null) {
+        let remain = parseInt(ctx.vars[ns] ?? "0", 10);
+        const idx = p.hand.findIndex((c) => c.instanceId === pending);
+        if (idx >= 0) {
+          const card = p.hand.splice(idx, 1)[0]!;
+          p.discard.push(card);
+          p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1;
+          remain -= 1;
+          ctx.vars[ns] = String(remain);
+        }
+        if (remain > 0 && p.hand.length > 0) {
+          pending = undefined;
+          return { steps: steps.slice(i), scope: "any", text: `discard ${remain} more`, optional: false, pick: "hand", handOwner: ctx.controller };
+        }
+        delete ctx.vars[ns];
+        continue;
+      }
+      const need = Math.min(step.amount ?? dynAmount(state, ctx, 0, step.amountPer), p.hand.length);
+      if (need <= 0) continue;
+      ctx.vars[ns] = String(need);
+      return { steps: steps.slice(i), scope: "any", text: step.text ?? `discard ${need}`, optional: false, pick: "hand", handOwner: ctx.controller };
     }
     if (step.do === "mayConfirm") {
       // A confirmed "Yes" injects a sentinel; consume it and run on. A fresh

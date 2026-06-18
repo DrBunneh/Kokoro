@@ -1023,5 +1023,18 @@
   "packofherown": [
     { "trigger": "on_play_character", "steps": [{ "do": "buff", "to": "self", "strength": 1, "duration": "end_of_turn" }] }
   ],
+  "howspickings": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "draw 1 per other character, then discard that many?" },
+      { "do": "draw", "player": "self", "amountPer": { "scope": "ally", "excludeSelf": true } },
+      { "do": "discardChoose", "amountPer": { "scope": "ally", "excludeSelf": true }, "text": "choose cards to discard" }
+    ] }
+  ],
+  "noplaceidratherbe": [
+    { "trigger": "start_of_turn", "steps": [
+      { "do": "mayConfirm", "text": "play Lilo from your discard (she enters exerted)?" },
+      { "do": "playFromDiscard", "exerted": true }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

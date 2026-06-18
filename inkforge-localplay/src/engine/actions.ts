@@ -405,7 +405,16 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   logs.push(log({ turnNumber: state.turnNumber, player, type: "CARD_DRAWN", message: `${p.name} drew a card` }));
 
   // Start-of-turn triggers go to the bag (resolved by this player).
-  if (effects) fireForController(state, "start_of_turn", player, logs, effects);
+  if (effects) {
+    fireForController(state, "start_of_turn", player, logs, effects);
+    // Some start-of-turn abilities fire from the discard (e.g. Lilo "play me").
+    // Only fire covered ones — don't surface manual prompts for stray discards.
+    for (const c of [...state.players[player].discard]) {
+      if (c.printed.specialAbilities.some((a) => (effects[a.slug] ?? []).some((d) => d.trigger === "start_of_turn"))) {
+        fireTrigger(state, "start_of_turn", c, player, logs, effects, false);
+      }
+    }
+  }
 }
 
 function checkLoreWin(state: GameState, logs: LogEntry[]): void {
@@ -792,6 +801,11 @@ export function reduce(
               steps = steps.slice(1);
               inject = undefined;
             }
+          } else if (lead && lead.do === "discardChoose") {
+            // Mandatory discard: a valid own-hand card, or default to the first.
+            const hand = next.players[prompt.controller].hand;
+            if (action.targetInstanceId != null && hand.some((c) => c.instanceId === action.targetInstanceId)) inject = action.targetInstanceId;
+            else inject = hand[0]?.instanceId;
           } else if (lead && (lead.do === "chooseCharacter" || lead.do === "chooseFromHand")) {
             if (action.targetInstanceId != null) {
               const loc = findInstance(next, action.targetInstanceId);

@@ -700,6 +700,55 @@ describe("Effect DSL + the bag", () => {
     expect(() => reduce(g, { type: "ACTIVATE_ABILITY", cardInstanceId: "gw", slug: "smooththeway" }, effects)).toThrow(/already used/i);
   });
 
+  it("draw-then-discard scales with your other characters (How's Pickings?)", () => {
+    const effects: CardEffects = {
+      hp: [{ trigger: "on_play", steps: [
+        { do: "mayConfirm", text: "draw then discard?" },
+        { do: "draw", player: "self", amountPer: { scope: "ally", excludeSelf: true } },
+        { do: "discardChoose", amountPer: { scope: "ally", excludeSelf: true } },
+      ] }],
+    };
+    let g = toPlay((id) => printed(id, { type: "character", cost: 1, inkable: true, specialAbilities: id === "tramp" ? [{ name: "How's Pickings?", slug: "hp", effect: "draw per other character, then discard that many" }] : [] }));
+    // Two other allies already in play → N = 2.
+    g.players[1].field.push(
+      { instanceId: "a1", printed: printed("a1"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+      { instanceId: "a2", printed: printed("a2"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+    );
+    g.players[1].inkwell = [{ instanceId: "ink", printed: printed("ink"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] }];
+    g.players[1].hand.push({ instanceId: "tramp", printed: printed("tramp", { type: "character", cost: 1, specialAbilities: [{ name: "How's Pickings?", slug: "hp", effect: "draw per other character, then discard that many" }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    const handBefore = g.players[1].hand.length; // includes tramp
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: "tramp" }, effects).state;
+    // Confirm the "may".
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "__confirm__" }, effects).state;
+    // Drew 2 → now a discard picker for 2.
+    expect(g.pendingPrompts[0]!.pick).toBe("hand");
+    const discardBefore = g.players[1].discard.length;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    expect(g.players[1].discard.length).toBe(discardBefore + 2); // discarded 2
+    // Net hand: started (handBefore) - tramp played + drew 2 - discarded 2.
+    expect(g.players[1].hand.length).toBe(handBefore - 1 + 2 - 2);
+  });
+
+  it("playFromDiscard: Lilo can be played from discard at start of turn", () => {
+    const effects: CardEffects = {
+      lilo: [{ trigger: "start_of_turn", steps: [{ do: "mayConfirm", text: "play from discard?" }, { do: "playFromDiscard", exerted: true }] }],
+    };
+    let g = toPlay((id) => printed(id));
+    const lilo = { instanceId: "lilo", printed: printed("lilo", { specialAbilities: [{ name: "No Place", slug: "lilo", effect: "At the start of your turn, if this card is in your discard, you may play her exerted." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].discard.push(lilo);
+    // End P1's turn, then P2's, to reach P1's next start of turn.
+    g = reduce(g, { type: "END_TURN" }, effects).state; // → P2
+    g = reduce(g, { type: "END_TURN" }, effects).state; // → P1 start of turn fires
+    const start = g.pendingPrompts.find((p) => p.pick === "confirm");
+    expect(start).toBeDefined();
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: start!.id, targetInstanceId: "__confirm__" }, effects).state;
+    expect(g.players[1].field.some((c) => c.instanceId === "lilo")).toBe(true);
+    expect(g.players[1].discard.some((c) => c.instanceId === "lilo")).toBe(false);
+    expect(g.players[1].field.find((c) => c.instanceId === "lilo")!.exerted).toBe(true);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
