@@ -59,6 +59,14 @@ export class GameSession {
     this.state = foldFrames(this.baseSnapshot, this.frames);
   }
 
+  /** Apply host-authoritative frames received over the network (spec §8.3). */
+  applyExternalFrames(frames: Frame[], logs: LogEntry[]): void {
+    this.frames.push(...frames);
+    this.logs.push(...logs);
+    this.redoStack = [];
+    this.state = foldFrames(this.baseSnapshot, this.frames);
+  }
+
   /** Re-apply the most recently undone frame. */
   redo(): void {
     const entry = this.redoStack.pop();
