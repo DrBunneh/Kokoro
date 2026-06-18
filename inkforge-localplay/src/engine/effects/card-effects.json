@@ -596,5 +596,24 @@
       ]
     }
   ],
+  "thatterriblewoman": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "enemy",
+          "optional": true,
+          "text": "banish chosen opposing character with 3 ¤ or less",
+          "filter": { "maxStrength": 3 }
+        },
+        {
+          "do": "banish",
+          "to": "t"
+        }
+      ]
+    }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

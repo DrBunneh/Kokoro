@@ -23,10 +23,18 @@ export type Trigger =
 export type Scope = "any" | "ally" | "enemy";
 export type Who = "self" | "opponent";
 
+/** Restricts which characters are a legal target (e.g. "with 3 {S} or less"). */
+export interface TargetFilter {
+  maxStrength?: number;
+  minStrength?: number;
+  maxCost?: number;
+  subtype?: string;
+}
+
 /** A single primitive action. `to`/`target` reference a bound var name or "self". */
 export type Step =
   // Targeting (suspends for a tap; binds the chosen instance to `as`):
-  | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean }
+  | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean; filter?: TargetFilter }
   // Damage:
   | { do: "dealDamage"; to: string; amount: number }
   | { do: "removeDamage"; to: string; amount: number }
@@ -82,6 +90,32 @@ export interface Suspension {
   scope: Scope;
   text?: string;
   optional: boolean;
+  filter?: TargetFilter;
+}
+
+/**
+ * Does a chosen character satisfy a choose step's scope + filter? Used by the
+ * reducer to reject illegal targets when resuming a suspended effect.
+ */
+export function targetMatches(
+  card: CardInstance,
+  owner: PlayerId,
+  controller: PlayerId,
+  step: Extract<Step, { do: "chooseCharacter" }>,
+  strength: number,
+): boolean {
+  if (card.printed.type !== "character") return false;
+  const scope = step.scope ?? "any";
+  if (scope === "ally" && owner !== controller) return false;
+  if (scope === "enemy" && owner === controller) return false;
+  const f = step.filter;
+  if (f) {
+    if (f.maxStrength != null && strength > f.maxStrength) return false;
+    if (f.minStrength != null && strength < f.minStrength) return false;
+    if (f.maxCost != null && card.printed.cost > f.maxCost) return false;
+    if (f.subtype && !card.printed.subtypes.some((s) => s.toLowerCase() === f.subtype!.toLowerCase())) return false;
+  }
+  return true;
 }
 
 const player = (ctx: EffectContext, who: Who | undefined): PlayerId =>
@@ -194,7 +228,7 @@ export function runSteps(
         pending = undefined;
         continue;
       }
-      return { steps: steps.slice(i), scope: step.scope ?? "any", text: step.text, optional: step.optional ?? false };
+      return { steps: steps.slice(i), scope: step.scope ?? "any", text: step.text, optional: step.optional ?? false, filter: step.filter };
     }
     applyStep(state, step, ctx, logs);
   }

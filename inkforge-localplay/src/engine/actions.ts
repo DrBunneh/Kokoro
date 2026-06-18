@@ -27,7 +27,7 @@ import {
   keywordValue,
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
-import { classifyTrigger, runSteps, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
+import { classifyTrigger, runSteps, targetMatches, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
 
@@ -562,8 +562,24 @@ export function reduce(
         const source = findInstance(next, prompt.sourceInstanceId ?? "")?.card;
         if (source) {
           const ctx: EffectContext = { controller: prompt.controller, source, vars: prompt.resume.vars, banished };
+          let steps = prompt.resume.steps;
+          let inject = action.targetInstanceId;
+          const lead = steps[0];
+          if (lead && lead.do === "chooseCharacter") {
+            if (action.targetInstanceId != null) {
+              // Reject an illegal target (wrong scope, or fails the filter).
+              const loc = findInstance(next, action.targetInstanceId);
+              if (!loc || loc.zone !== "field" || !targetMatches(loc.card, loc.owner, prompt.controller, lead, effectiveStrength(loc.card))) {
+                throw new GameError("Not a legal target for this ability");
+              }
+            } else if (lead.optional) {
+              // Declined an optional choice → skip it; dependent steps no-op.
+              steps = steps.slice(1);
+              inject = undefined;
+            }
+          }
           // The follow-up may itself need another choice → re-suspend a prompt.
-          const again = runSteps(next, prompt.resume.steps, ctx, logs, action.targetInstanceId);
+          const again = runSteps(next, steps, ctx, logs, inject);
           if (again) {
             next.pendingPrompts.push({
               id: uid(),

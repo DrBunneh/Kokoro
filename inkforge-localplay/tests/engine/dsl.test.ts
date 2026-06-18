@@ -152,6 +152,43 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].deck.length).toBe(deckBefore - 1);
   });
 
+  it("enforces a target filter (3 strength or less) and rejects illegal targets", () => {
+    const effects: CardEffects = {
+      smite: [{ trigger: "on_play", steps: [{ do: "chooseCharacter", as: "t", scope: "enemy", optional: true, filter: { maxStrength: 3 } }, { do: "banish", to: "t" }] }],
+    };
+    // P1 plays the smiter; P2 has a weak (str 2) and a strong (str 5) character on the field.
+    let g = toPlay(lookupP1Ability("Smite", "smite", "When you play this, banish chosen opposing character with 3 {S} or less."));
+    // Hand-place two P2 characters directly on the board for targeting.
+    const weak = { instanceId: "weak", printed: printed("weak", { strength: 2, willpower: 3 }), damage: 0, exerted: true, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    const strong = { instanceId: "strong", printed: printed("strong", { strength: 5, willpower: 3 }), damage: 0, exerted: true, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[2].field.push(weak, strong);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    const promptId = g.pendingPrompts[0]!.id;
+    // The strong (5 {S}) character is not a legal target.
+    expect(() => reduce(g, { type: "RESPOND_TO_PROMPT", promptId, targetInstanceId: "strong" }, effects)).toThrow(/legal target/i);
+    // The weak (2 {S}) character is legal and gets banished.
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId, targetInstanceId: "weak" }, effects).state;
+    expect(g.players[2].field.some((c) => c.instanceId === "weak")).toBe(false);
+    expect(g.players[2].discard.some((c) => c.instanceId === "weak")).toBe(true);
+    expect(g.players[2].field.some((c) => c.instanceId === "strong")).toBe(true);
+  });
+
+  it("declining an optional target skips the effect", () => {
+    const effects: CardEffects = {
+      maybe: [{ trigger: "on_play", steps: [{ do: "chooseCharacter", as: "t", scope: "any", optional: true }, { do: "banish", to: "t" }] }],
+    };
+    let g = toPlay(lookupP1Ability("Maybe", "maybe", "When you play this, you may banish chosen character."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    const playId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: playId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(1);
+    // Decline (no target) → prompt clears and nothing is banished.
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    expect(g.players[1].field.some((c) => c.instanceId === playId)).toBe(true);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
