@@ -94,6 +94,8 @@ export type Step =
   | { do: "banishAll"; scope?: Scope }
   // Put every matching character in scope on the bottom of their deck (Under the Sea).
   | { do: "toBottomAll"; scope?: Scope; maxStrength?: number }
+  // Put every matching character into its owner's inkwell, exerted (Spooky Sight).
+  | { do: "putToInkwellAll"; scope?: Scope; maxCost?: number }
   // "Choose one" of several sub-effects (Pull the Lever / Wrong Lever).
   | { do: "modal"; options: { label: string; steps: Step[] }[] }
   // "Pay N less for the next matching card you play this turn."
@@ -447,6 +449,19 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         if (i >= 0) arr.splice(i, 1);
         t.damage = 0; t.exerted = false; t.justPlayed = false; t.appliedEffects = [];
         state.players[loc.owner].deck.push(t);
+      }
+      break;
+    }
+    case "putToInkwellAll": {
+      for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) {
+        if (step.maxCost != null && t.printed.cost > step.maxCost) continue;
+        const loc = findInstance(state, t.instanceId);
+        if (!loc) continue;
+        const arr = state.players[loc.owner][loc.zone];
+        const i = arr.indexOf(t);
+        if (i >= 0) arr.splice(i, 1);
+        t.damage = 0; t.exerted = true; t.justPlayed = true; t.appliedEffects = [];
+        state.players[loc.owner].inkwell.push(t);
       }
       break;
     }

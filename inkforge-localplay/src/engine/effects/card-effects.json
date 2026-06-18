@@ -984,5 +984,29 @@
   "rigoroustraining": [
     { "trigger": "on_quest", "steps": [{ "do": "gainLoreByStrength", "max": 6 }] }
   ],
+  "spookysight": [
+    { "trigger": "on_play", "steps": [{ "do": "putToInkwellAll", "scope": "any", "maxCost": 3 }] }
+  ],
+  "wronglever": [
+    { "trigger": "on_play", "steps": [{ "do": "modal", "options": [
+      { "label": "Return chosen character to hand", "steps": [
+        { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "return chosen character to hand" },
+        { "do": "returnToHand", "to": "t" }
+      ] },
+      { "label": "Put chosen character on the bottom of their deck", "steps": [
+        { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "put chosen character on the bottom of their deck" },
+        { "do": "toBottom", "to": "t" }
+      ] }
+    ] }] }
+  ],
+  "friendlierthanhelooks": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "chosen opposing character gains Reckless next turn" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Reckless", "duration": "end_of_turn" }
+    ] }
+  ],
+  "scoutahead": [
+    { "trigger": "on_play", "steps": [] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }
