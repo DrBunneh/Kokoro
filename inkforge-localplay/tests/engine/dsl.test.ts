@@ -583,6 +583,46 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[2].field.some((c) => c.instanceId === "b")).toBe(true); // 5 str stays
   });
 
+  it("condition gate: an effect only fires when its 'when' holds", () => {
+    const effects: CardEffects = {
+      gated: [{ trigger: "on_play", when: { discardedAtLeast: 2 }, steps: [{ do: "gainLore", player: "self", amount: 3 }] }],
+    };
+    // No discards this turn → gate fails → no lore, no prompt.
+    let g = toPlay(lookupP1Ability("Gated", "gated", "If 2+ discarded, gain 3 lore."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.players[1].lore).toBe(0);
+    expect(g.pendingPrompts).toHaveLength(0);
+  });
+
+  it("on_play_action fires your other characters' triggers (Wayfinding)", () => {
+    const effects: CardEffects = {
+      wf: [{ trigger: "on_play_action", steps: [{ do: "gainLore", player: "self", amount: 1 }] }],
+      zap: [{ trigger: "on_play", steps: [{ do: "draw", player: "self", amount: 1 }] }],
+    };
+    // A character with Wayfinding is already in play.
+    let g = toPlay((id) => printed(id, { type: "action", inkable: true, specialAbilities: [{ name: "Zap", slug: "zap", effect: "When you play this, draw." }] }));
+    const maui = { instanceId: "maui", printed: printed("maui", { specialAbilities: [{ name: "Wayfinding", slug: "wf", effect: "Whenever you play an action, gain 1 lore." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].field.push(maui);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    const loreBefore = g.players[1].lore;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.players[1].lore).toBe(loreBefore + 1); // Wayfinding fired on the action
+  });
+
+  it("end_of_turn triggers fire and hold the turn for resolution", () => {
+    const effects: CardEffects = {
+      eot: [{ trigger: "end_of_turn", steps: [{ do: "gainLore", player: "self", amount: 1 }] }],
+    };
+    let g = toPlay((id) => printed(id, { specialAbilities: [{ name: "Eot", slug: "eot", effect: "At the end of your turn, gain 1 lore." }] }));
+    // Put the character in play, then end the turn.
+    g.players[1].field.push({ instanceId: "eotc", printed: printed("eotc", { specialAbilities: [{ name: "Eot", slug: "eot", effect: "At end of turn, gain 1 lore." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    const loreBefore = g.players[1].lore;
+    g = reduce(g, { type: "END_TURN" }, effects).state;
+    expect(g.players[1].lore).toBe(loreBefore + 1); // end-of-turn gain resolved
+    expect(g.currentPlayer).toBe(2); // turn advanced (no prompt needed)
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

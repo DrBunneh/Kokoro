@@ -801,14 +801,6 @@
       { "do": "discardCard", "from": "d" }
     ] }
   ],
-  "strategicedge": [
-    { "trigger": "on_play", "steps": [
-      { "do": "mayConfirm", "text": "draw a card, then discard a card?" },
-      { "do": "draw", "player": "self", "amount": 1 },
-      { "do": "chooseFromHand", "as": "d", "from": "self", "optional": true, "text": "discard a card" },
-      { "do": "discardCard", "from": "d" }
-    ] }
-  ],
   "wedonttalkaboutbruno": [
     { "trigger": "on_play", "steps": [
       { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "return chosen opposing character to hand" },
@@ -918,6 +910,58 @@
   ],
   "underthesea": [
     { "trigger": "on_play", "steps": [{ "do": "toBottomAll", "scope": "enemy", "maxStrength": 2 }] }
+  ],
+  "itsamachine": [
+    { "trigger": "on_play", "when": { "discardedAtLeast": 2 }, "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "banish chosen opposing character" },
+      { "do": "banish", "to": "t" }
+    ] }
+  ],
+  "whateveryouwishfor": [
+    { "trigger": "end_of_turn", "when": { "playedSubtype": "Princess" }, "steps": [
+      { "do": "mayConfirm", "text": "put a card from hand into your inkwell to draw a card?" },
+      { "do": "chooseFromHand", "as": "c", "from": "self", "optional": true, "text": "put into inkwell facedown" },
+      { "do": "toInkwell", "from": "c" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "itsbetterthisway": [
+    { "trigger": "start_of_turn", "when": { "selfUndamaged": true }, "steps": [{ "do": "draw", "player": "self", "amount": 1 }] },
+    { "trigger": "start_of_turn", "when": { "selfDamaged": true }, "steps": [{ "do": "buff", "to": "self", "strength": 4, "duration": "end_of_turn" }] }
+  ],
+  "coordinatedefforts": [
+    { "trigger": "end_of_turn", "when": { "exertedAlliesAtLeast": 3 }, "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "deal 1 damage to chosen opposing character" },
+      { "do": "dealDamage", "to": "t", "amount": 1 },
+      { "do": "gainLore", "player": "self", "amount": 1 },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "strategicedge": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "draw a card, then discard a card?" },
+      { "do": "draw", "player": "self", "amount": 1 },
+      { "do": "chooseFromHand", "as": "d", "from": "self", "optional": true, "text": "discard a card" },
+      { "do": "discardCard", "from": "d" }
+    ] },
+    { "trigger": "start_of_turn", "steps": [
+      { "do": "mayConfirm", "text": "draw a card, then discard a card?" },
+      { "do": "draw", "player": "self", "amount": 1 },
+      { "do": "chooseFromHand", "as": "d", "from": "self", "optional": true, "text": "discard a card" },
+      { "do": "discardCard", "from": "d" }
+    ] }
+  ],
+  "wayfinding": [
+    { "trigger": "on_play_action", "steps": [{ "do": "gainLore", "player": "self", "amount": 1 }] }
+  ],
+  "thegospeltruth": [
+    { "trigger": "on_play_song", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "filter": { "maxStrength": 2 }, "text": "return chosen character with 2 ¤ or less to hand" },
+      { "do": "returnToHand", "to": "t" }
+    ] }
+  ],
+  "poorsouls": [
+    { "trigger": "on_challenged", "steps": [{ "do": "opponentDiscard", "amount": 1 }] }
   ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

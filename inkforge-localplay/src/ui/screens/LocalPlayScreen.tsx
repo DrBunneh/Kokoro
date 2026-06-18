@@ -215,7 +215,7 @@ export function LocalPlayScreen() {
           </div>
           {hostInfo && (hostInfo.addresses?.length ?? 0) > 0 && (
             <p className="text-xs text-slate-400">
-              If they can't see it (e.g. Bluetooth), have them use <strong>Connect by IP</strong>:
+              If they can't see it, have them use <strong>Connect by IP</strong>:
               <br />
               {hostInfo.addresses!.map((a) => (
                 <span key={a} className="font-mono text-slate-200">{a}:{hostInfo.port} </span>
@@ -239,7 +239,7 @@ export function LocalPlayScreen() {
             ))}
           </ul>
           <div className="space-y-1 rounded-lg border border-white/10 p-2">
-            <p className="text-xs text-slate-400">Connect by IP (for Bluetooth, or if it isn't listed):</p>
+            <p className="text-xs text-slate-400">Connect by IP (if it isn't listed):</p>
             <div className="flex gap-1">
               <input value={manualHost} onChange={(e) => setManualHost(e.target.value)} placeholder="192.168.x.x" className="min-w-0 flex-1 rounded bg-white/5 px-2 py-1 text-sm text-slate-100 ring-1 ring-white/10" />
               <input value={manualPort} onChange={(e) => setManualPort(e.target.value)} placeholder="port" inputMode="numeric" className="w-20 rounded bg-white/5 px-2 py-1 text-sm text-slate-100 ring-1 ring-white/10" />

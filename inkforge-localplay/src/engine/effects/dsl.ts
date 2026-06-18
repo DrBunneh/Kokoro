@@ -18,12 +18,36 @@ export type Trigger =
   | "on_quest"
   | "on_challenge"
   | "on_banish"
+  | "on_challenged" // when THIS character is challenged
+  | "on_play_action" // whenever you play an action/song (for your other cards)
+  | "on_play_song" // whenever you play a song specifically
+  | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
   | "activated";
 
 export type Scope = "any" | "ally" | "enemy";
 export type Who = "self" | "opponent";
+
+/** A predicate that gates whether an effect fires (Lorcana "if …" clauses). */
+export interface Condition {
+  /** You played a card of this type this turn. */
+  playedType?: CardType;
+  /** You played a character with this subtype this turn (e.g. "Princess"). */
+  playedSubtype?: string;
+  /** At least N cards were put into your discard this turn. */
+  discardedAtLeast?: number;
+  /** The source character has no damage. */
+  selfUndamaged?: boolean;
+  /** The source character has damage on it. */
+  selfDamaged?: boolean;
+  /** You have at least N exerted characters in play. */
+  exertedAlliesAtLeast?: number;
+  /** You have a character with this name in play. */
+  haveCharacterNamed?: string;
+  /** It's your first turn and you're not the first player. */
+  firstTurnNotFirstPlayer?: boolean;
+}
 
 /** A magnitude that scales with the number of characters in a scope. */
 export interface AmountPer {
@@ -123,6 +147,8 @@ export type Step =
 export interface EffectDef {
   trigger: Trigger;
   steps: Step[];
+  /** Optional gate: the effect only fires when this condition holds. */
+  when?: Condition;
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
@@ -363,7 +389,9 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "discardHandDraw": {
       const p = state.players[player(ctx, step.player)];
-      p.discard.push(...p.hand.splice(0, p.hand.length));
+      const n = p.hand.length;
+      p.discard.push(...p.hand.splice(0, n));
+      p.discardedThisTurn = (p.discardedThisTurn ?? 0) + n;
       drawCards(p, step.draw);
       break;
     }
@@ -373,6 +401,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       for (let k = 0; k < step.amount && opp.hand.length > 0; k++) {
         const i = rng.int(opp.hand.length);
         opp.discard.push(opp.hand.splice(i, 1)[0]!);
+        opp.discardedThisTurn = (opp.discardedThisTurn ?? 0) + 1;
       }
       state.rngCursor = rng.cursor;
       break;
@@ -420,6 +449,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         const i = arr.indexOf(t);
         if (i >= 0) arr.splice(i, 1);
         state.players[loc.owner].discard.push(t);
+        state.players[loc.owner].discardedThisTurn = (state.players[loc.owner].discardedThisTurn ?? 0) + 1;
       }
       break;
     }
@@ -480,7 +510,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "discard": {
       const p = state.players[player(ctx, step.player)];
-      for (let i = 0; i < (step.amount ?? 1); i++) { const c = p.hand.pop(); if (c) p.discard.push(c); }
+      for (let i = 0; i < (step.amount ?? 1); i++) { const c = p.hand.pop(); if (c) { p.discard.push(c); p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1; } }
       break;
     }
     case "gainLore": {

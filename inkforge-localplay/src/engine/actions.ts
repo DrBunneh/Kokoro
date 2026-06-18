@@ -27,7 +27,7 @@ import {
   keywordValue,
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
-import { classifyTrigger, runSteps, targetMatches, scryMatch, handCardMatches, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
+import { classifyTrigger, runSteps, targetMatches, scryMatch, handCardMatches, type CardEffects, type Condition, type EffectContext, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
 
@@ -82,7 +82,7 @@ function buildDeck(lookup: CardLookup, ids: string[], player: PlayerId): CardIns
 }
 
 function emptyPlayer(name: string, deck: CardInstance[]): PlayerState {
-  return { name, hand: [], field: [], items: [], inkwell: [], discard: [], deck, lore: 0, discounts: [], extraInk: 0 };
+  return { name, hand: [], field: [], items: [], inkwell: [], discard: [], deck, lore: 0, discounts: [], extraInk: 0, discardedThisTurn: 0, playedThisTurn: [] };
 }
 
 /**
@@ -191,6 +191,28 @@ function actionEffectText(rules: string): string {
   return t.trim();
 }
 
+/** Evaluate an effect's optional gate against the current state. */
+function conditionMet(state: GameState, controller: PlayerId, source: CardInstance, when?: Condition): boolean {
+  if (!when) return true;
+  const p = state.players[controller];
+  const played = p.playedThisTurn ?? [];
+  if (when.playedType && !played.some((x) => x.type === when.playedType)) return false;
+  if (when.playedSubtype) {
+    const want = when.playedSubtype.toLowerCase();
+    if (!played.some((x) => x.subtypes.some((s) => s.toLowerCase() === want))) return false;
+  }
+  if (when.discardedAtLeast != null && (p.discardedThisTurn ?? 0) < when.discardedAtLeast) return false;
+  if (when.selfUndamaged && source.damage > 0) return false;
+  if (when.selfDamaged && source.damage <= 0) return false;
+  if (when.exertedAlliesAtLeast != null && p.field.filter((c) => c.printed.type === "character" && c.exerted).length < when.exertedAlliesAtLeast) return false;
+  if (when.haveCharacterNamed) {
+    const want = when.haveCharacterNamed.toLowerCase();
+    if (!p.field.some((c) => c.printed.name.toLowerCase() === want)) return false;
+  }
+  if (when.firstTurnNotFirstPlayer && !(controller !== state.firstPlayer && state.turnNumber <= 2)) return false;
+  return true;
+}
+
 /** Resolve one ability for a trigger: run its DSL def, or surface it for Manual Mode. */
 function runAbility(
   state: GameState,
@@ -207,6 +229,8 @@ function runAbility(
   const matching = (effects[sa.slug] ?? []).filter((d) => d.trigger === trigger);
   if (matching.length > 0) {
     for (const def of matching) {
+      // A gated effect only fires when its condition holds (else it's skipped).
+      if (!conditionMet(state, controller, source, def.when)) continue;
       const ctx: EffectContext = { controller, source, vars: {}, banished };
       const suspension = runSteps(state, def.steps, ctx, logs);
       if (suspension) {
@@ -283,6 +307,25 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
   }
 }
 
+/** Record a card a player played this turn (for "if you played a …" gates). */
+function recordPlay(p: PlayerState, card: CardInstance): void {
+  (p.playedThisTurn ??= []).push({ type: card.printed.type, subtypes: card.printed.subtypes ?? [], name: card.printed.name });
+}
+
+/** Fire an event trigger for every character a player controls (e.g. "whenever you play an action"). */
+function fireForController(
+  state: GameState,
+  trigger: Trigger,
+  controller: PlayerId,
+  logs: LogEntry[],
+  effects: CardEffects,
+  banished?: BanishRef[],
+): void {
+  for (const c of [...state.players[controller].field]) {
+    if (c.printed.type === "character") fireTrigger(state, trigger, c, controller, logs, effects, true, banished);
+  }
+}
+
 /** Parse the cost of an activated ability from the text before its em dash. */
 function parseActivationCost(effect: string): { exert: boolean; ink: number; banishSelf: boolean } {
   const head = effect.split("—")[0] ?? "";
@@ -295,10 +338,16 @@ function parseActivationCost(effect: string): { exert: boolean; ink: number; ban
 }
 
 /** Begin a player's turn: ready/set/draw. The first player skips the very first draw. */
-function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeningTurn: boolean): void {
+function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeningTurn: boolean, effects?: CardEffects): void {
   state.currentPlayer = player;
   state.hasInkedThisTurn = false;
+  // Fresh per-turn windows for both players.
+  for (const pid of [1, 2] as PlayerId[]) {
+    state.players[pid].discardedThisTurn = 0;
+    state.players[pid].playedThisTurn = [];
+  }
   state.players[player].extraInk = 0;
+  state.endStepDone = false;
   // A lockout ("opponents can't play …") expires when its caster's turn begins.
   if (state.lockout && state.lockout.caster === player) delete state.lockout;
   const p = state.players[player];
@@ -326,6 +375,9 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     return;
   }
   logs.push(log({ turnNumber: state.turnNumber, player, type: "CARD_DRAWN", message: `${p.name} drew a card` }));
+
+  // Start-of-turn triggers go to the bag (resolved by this player).
+  if (effects) fireForController(state, "start_of_turn", player, logs, effects);
 }
 
 function checkLoreWin(state: GameState, logs: LogEntry[]): void {
@@ -397,7 +449,7 @@ export function reduce(
         delete next.mulliganState;
         next.status = "playing";
         next.turnNumber = 1;
-        startTurn(next, next.firstPlayer!, logs, true);
+        startTurn(next, next.firstPlayer!, logs, true, effects);
       }
       return { state: next, logs };
     }
@@ -454,6 +506,7 @@ export function reduce(
         const fi = p.field.indexOf(base);
         p.field.splice(fi, 1, card);
         logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} shifted ${card.printed.fullName} onto ${base.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+        recordPlay(p, card);
         fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
         drainBanish(next, banished, logs, effects);
         return { state: next, logs };
@@ -474,8 +527,12 @@ export function reduce(
         for (const s of singers) s.exerted = true;
         p.hand.splice(idx, 1);
         p.discard.push(card);
+        p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1;
+        recordPlay(p, card);
         logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} sang ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
         fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
+        fireForController(next, "on_play_action", next.currentPlayer, logs, effects, banished);
+        fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
         drainBanish(next, banished, logs, effects);
         return { state: next, logs };
       }
@@ -506,10 +563,14 @@ export function reduce(
         case "action":
         case "song":
           p.discard.push(card);
+          p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1;
           break;
       }
+      recordPlay(p, card);
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} played ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
+      if (card.printed.type === "action" || card.printed.type === "song") fireForController(next, "on_play_action", next.currentPlayer, logs, effects, banished);
+      if (card.printed.type === "song") fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
@@ -619,6 +680,7 @@ export function reduce(
       // ability goes on the bag.
       attacker.exerted = true;
       fireTrigger(next, "on_challenge", attacker, next.currentPlayer, logs, effects, true, banished);
+      if (defenderIsChar) fireTrigger(next, "on_challenged", defender, otherPlayer(next.currentPlayer), logs, effects, true, banished);
 
       // Challenge damage (simultaneous), with Challenger +N and Resist applied.
       const atkStrength = effectiveStrength(attacker) + keywordValue(attacker, "Challenger");
@@ -764,6 +826,14 @@ export function reduce(
     case "END_TURN": {
       if (next.status !== "playing") throw new GameError("Not in play");
       const ending = next.currentPlayer;
+      // End-of-turn triggers fire (and resolve) before the turn passes — once.
+      if (!next.endStepDone) {
+        fireForController(next, "end_of_turn", ending, logs, effects, banished);
+        drainBanish(next, banished, logs, effects);
+        next.endStepDone = true;
+        // If one needs resolving, hold the turn; the player resolves then ends again.
+        if (next.pendingPrompts.length > 0) return { state: next, logs };
+      }
       // Expire "until end of turn" effects across all cards.
       for (const pid of [1, 2] as PlayerId[]) {
         for (const c of [...next.players[pid].field, ...next.players[pid].items]) {
@@ -776,7 +846,7 @@ export function reduce(
       next.players[ending].discounts = [];
       logs.push(log({ turnNumber: next.turnNumber, player: ending, type: "TURN_END", message: `${next.players[ending].name} ends turn` }));
       next.turnNumber += 1;
-      startTurn(next, otherPlayer(ending), logs, false);
+      startTurn(next, otherPlayer(ending), logs, false, effects);
       return { state: next, logs };
     }
 

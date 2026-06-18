@@ -66,6 +66,10 @@ export interface PlayerState {
   discounts: Discount[];
   /** Extra inkings allowed this turn beyond the normal one (reset each turn). */
   extraInk: number;
+  /** Cards put into this player's discard this turn (for "if 2+ discarded" gates). */
+  discardedThisTurn: number;
+  /** Cards this player has played this turn (for "if you played a Princess" gates). */
+  playedThisTurn: { type: import("@/data/card-types").CardType; subtypes: string[]; name: string }[];
 }
 
 export interface CoinToss {
@@ -123,6 +127,8 @@ export interface GameState {
   rngCursor: number;
   /** "Opponents can't play actions (or items) until the caster's next turn." */
   lockout?: { caster: PlayerId; items: boolean };
+  /** Whether the current turn's end-of-turn triggers have already fired. */
+  endStepDone?: boolean;
 }
 
 export const WIN_LORE = 20;

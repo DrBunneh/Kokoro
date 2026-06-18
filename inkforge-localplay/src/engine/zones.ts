@@ -27,6 +27,7 @@ export function banishCard(p: PlayerState, card: CardInstance, logs: LogEntry[],
   }
   if (card.cardsUnder.length) {
     p.discard.push(...card.cardsUnder);
+    p.discardedThisTurn = (p.discardedThisTurn ?? 0) + card.cardsUnder.length;
     card.cardsUnder = [];
   }
   card.damage = 0;
@@ -34,6 +35,7 @@ export function banishCard(p: PlayerState, card: CardInstance, logs: LogEntry[],
   card.justPlayed = false;
   card.appliedEffects = [];
   p.discard.push(card);
+  p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1;
   logs.push(makeLog({ turnNumber, player: null, type: "CARD_DESTROYED", message: `${card.printed.fullName} was banished`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
 }
 
