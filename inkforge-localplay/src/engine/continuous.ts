@@ -56,6 +56,9 @@ export interface StaticDef {
   otherSubtype?: string;
   /** Only while the controller has a character of this subtype in play (Diablo - Stone Servant — Villain). */
   whileControllerHasSubtype?: string;
+  /** Only while the controller has at least N other characters of this color (Mickey - Amber Champion). */
+  whileOtherColorAtLeast?: number;
+  otherColor?: string;
 }
 
 /**
@@ -178,6 +181,11 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
         if (def.whileOtherCharsAtLeast != null && otherChars(state, srcOwner, src, def.otherSubtype) < def.whileOtherCharsAtLeast) continue;
         if (def.whileControllerHasSubtype && !state.players[srcOwner].field.some((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => s.toLowerCase() === def.whileControllerHasSubtype!.toLowerCase()))) continue;
         if (def.whileHasCardUnder && src.cardsUnder.length === 0) continue;
+        if (def.whileOtherColorAtLeast != null) {
+          const want = (def.otherColor ?? "").toLowerCase();
+          const n = state.players[srcOwner].field.filter((c) => c.printed.type === "character" && c.instanceId !== src.instanceId && c.printed.colors.some((col) => col.toLowerCase() === want)).length;
+          if (n < def.whileOtherColorAtLeast) continue;
+        }
         if (def.targetHasKeyword && !targetHasPrintedKeyword(card, def.targetHasKeyword)) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
         const scale = def.perDiscard

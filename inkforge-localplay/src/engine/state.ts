@@ -82,6 +82,8 @@ export interface PlayerState {
   playedThisTurn: { type: import("@/data/card-types").CardType; subtypes: string[]; name: string }[];
   /** One of this player's own Toy characters was banished this turn (Wind-Up Frog). */
   ownToyBanishedThisTurn?: boolean;
+  /** This player removed damage from a character this turn (Julieta's Arepas). */
+  removedDamageThisTurn?: boolean;
 }
 
 export interface CoinToss {

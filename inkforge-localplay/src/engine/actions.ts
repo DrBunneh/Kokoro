@@ -219,7 +219,7 @@ function hasControllerStatic(state: GameState, owner: PlayerId, slug: string): b
 }
 
 /** Optional event context for conditions that reference the triggering event. */
-type EventCtx = { banishedCard?: CardInstance; banishedOwner?: PlayerId };
+type EventCtx = { banishedCard?: CardInstance; banishedOwner?: PlayerId; actor?: CardInstance };
 
 /** Evaluate an effect's optional gate against the current state. */
 function conditionMet(state: GameState, controller: PlayerId, source: CardInstance, when?: Condition, ev?: EventCtx): boolean {
@@ -276,6 +276,11 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
     if (!ev?.banishedCard?.printed.subtypes.some((s) => s.toLowerCase() === want)) return false;
   }
   if (when.banishedMine && ev?.banishedOwner !== controller) return false;
+  if (when.banishedOpponent && (ev?.banishedOwner == null || ev.banishedOwner === controller)) return false;
+  if (when.actorSubtype) {
+    const want = when.actorSubtype.toLowerCase();
+    if (!ev?.actor?.printed.subtypes.some((s) => s.toLowerCase() === want)) return false;
+  }
   if (when.selfHasCardUnder && source.cardsUnder.length === 0) return false;
   if (when.ownToyBanishedThisTurn && !p.ownToyBanishedThisTurn) return false;
   if (when.opponentInkwellMoreThanYou && state.players[otherPlayer(controller)].inkwell.length <= p.inkwell.length) return false;
@@ -286,6 +291,8 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
     if (n < when.subtypeInDiscardAtLeast.count) return false;
   }
   if (when.haveOwnItem && p.items.length === 0) return false;
+  if (when.haveItemsAtLeast != null && p.items.length < when.haveItemsAtLeast) return false;
+  if (when.removedDamageThisTurn && !p.removedDamageThisTurn) return false;
   return true;
 }
 
@@ -515,6 +522,44 @@ function fireLocationHere(
 }
 
 /**
+ * Fire an "ally actor" watch for each of `owner`'s field characters (excluding
+ * the actor), binding the actor as `varName` and exposing it to conditions as
+ * `ev.actor` (Mickey-Expedition, Mr. Incredible, Pluto - Steel Champion).
+ */
+function fireAllyActor(
+  state: GameState,
+  trigger: Trigger,
+  owner: PlayerId,
+  actor: CardInstance,
+  varName: string,
+  logs: LogEntry[],
+  effects: CardEffects,
+  banished?: BanishRef[],
+): void {
+  const ev: EventCtx = { actor };
+  for (const c of [...state.players[owner].field]) {
+    if (c.printed.type !== "character" || c.instanceId === actor.instanceId) continue;
+    for (const sa of c.printed.specialAbilities) {
+      const defs = (effects[sa.slug] ?? []).filter((d) => d.trigger === trigger);
+      for (const def of defs) {
+        if (!conditionMet(state, owner, c, def.when, ev)) continue;
+        const ctx: EffectContext = { controller: owner, source: c, vars: { [varName]: actor.instanceId }, banished, events: makeEvents(state, logs, effects, banished) };
+        const suspension = runSteps(state, def.steps ?? [], ctx, logs);
+        if (suspension) {
+          state.pendingPrompts.push({
+            id: uid(), player: owner, sourceInstanceId: c.instanceId, kind: sa.slug,
+            text: suspension.text ? `${sa.name}: ${suspension.text}` : `${sa.name}: ${sa.effect}`,
+            auto: false, controller: owner, scope: suspension.scope, pick: suspension.pick,
+            reveal: suspension.reveal, handOwner: suspension.handOwner, modes: suspension.modes,
+            resume: { steps: suspension.steps, vars: ctx.vars },
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
  * Build the mid-effect event hooks the interpreter calls when a draw/discard
  * happens inside an effect, so on_draw / opponent-discard watches fire. A guard
  * on the state prevents a watch's own draws from cascading.
@@ -582,6 +627,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     state.players[pid].discardedThisTurn = 0;
     state.players[pid].playedThisTurn = [];
     state.players[pid].ownToyBanishedThisTurn = false;
+    state.players[pid].removedDamageThisTurn = false;
   }
   state.players[player].extraInk = 0;
   state.endStepDone = false;
@@ -902,6 +948,8 @@ export function reduce(
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
       fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, true, banished);
+      // "Whenever one of your other characters quests" (Mickey - Expedition Leader).
+      fireAllyActor(next, "on_ally_quest", next.currentPlayer, card, "quester", logs, effects, banished);
       // "Whenever a character quests while here" (Casa Madrigal).
       if (card.atLocation) {
         const loc = next.players[next.currentPlayer].field.find((c) => c.instanceId === card.atLocation && c.printed.type === "location");
@@ -1040,8 +1088,13 @@ export function reduce(
       const defenderIsChar = defender.printed.type === "character";
       // Cinderella "The Singing Sword" lets the attacker challenge ready characters.
       if (defenderIsChar && !defender.exerted && !attacker.challengeReadyThisTurn) throw new GameError("Can only challenge exerted characters");
-      if (defenderIsChar && hasKeyword(next, defender, "Evasive") && !hasKeyword(next, attacker, "Evasive")) {
+      if (defenderIsChar && hasKeyword(next, defender, "Evasive") && !hasKeyword(next, attacker, "Evasive") && !hasKeyword(next, attacker, "Alert")) {
         throw new GameError("Only Evasive characters can challenge an Evasive character");
+      }
+      // Diablo - Stone Servant "Villainous Bond": while it's exerted, your Villains can't be challenged.
+      if (defenderIsChar && defender.printed.subtypes.some((s) => s.toLowerCase() === "villain") &&
+          dp.field.some((c) => c.exerted && c.printed.specialAbilities.some((a) => a.slug === "villainousbond"))) {
+        throw new GameError("That character can't be challenged");
       }
       // Bodyguard: if a legal enemy target has Bodyguard, one must be chosen.
       const legalTargets = dp.field.filter((c) => c.printed.type !== "character" || c.exerted);
@@ -1054,6 +1107,8 @@ export function reduce(
       // ability goes on the bag.
       attacker.exerted = true;
       fireTrigger(next, "on_challenge", attacker, next.currentPlayer, logs, effects, true, banished);
+      // "Whenever one of your [Super] characters challenges" (Mr. Incredible).
+      fireAllyActor(next, "on_ally_challenge", next.currentPlayer, attacker, "challenger", logs, effects, banished);
       if (defenderIsChar) {
         fireTrigger(next, "on_challenged", defender, otherPlayer(next.currentPlayer), logs, effects, true, banished);
         fireAllyChallenged(next, otherPlayer(next.currentPlayer), attacker, defender.instanceId, logs, effects, banished);
@@ -1082,7 +1137,11 @@ export function reduce(
       if (attackerDies) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); }
       // "Whenever this character banishes another character in a challenge" — only
       // if the attacker survived to do the banishing (Calhoun, Robin, Tinker Bell).
-      if (defenderDies && !attackerDies) fireTrigger(next, "on_challenge_banish", attacker, next.currentPlayer, logs, effects, true, banished);
+      if (defenderDies && !attackerDies) {
+        fireTrigger(next, "on_challenge_banish", attacker, next.currentPlayer, logs, effects, true, banished);
+        // "Whenever one of your other [Steel] characters banishes in a challenge" (Pluto - Steel).
+        fireAllyActor(next, "on_ally_challenge_banish", next.currentPlayer, attacker, "challenger", logs, effects, banished);
+      }
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }

@@ -1637,6 +1637,90 @@
   "bigprize": [
     { "trigger": "on_quest", "steps": [{ "do": "opponentTopByType", "cardType": "character" }] }
   ],
+  "advancedtraining": [
+    { "trigger": "on_play_action", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "give +1 {L} this turn" },
+      { "do": "buff", "to": "t", "lore": 1, "duration": "end_of_turn" }
+    ] }
+  ],
+  "cominupfast": [
+    { "trigger": "on_play_action", "oncePerTurn": true, "steps": [
+      { "do": "mayConfirm", "text": "ready this character?" },
+      { "do": "ready", "to": "self" }
+    ] }
+  ],
+  "hehasbeenchosen": [
+    { "trigger": "on_banish", "when": { "onlyYourTurn": true }, "steps": [{ "do": "returnFromDiscard", "cardName": "Alien", "keepUpTo": 1, "optional": true, "text": "return a character named Alien from your discard" }] }
+  ],
+  "gatheringstrength": [
+    { "trigger": "on_other_banished", "when": { "banishedOpponent": true, "onlyYourTurn": true }, "steps": [{ "do": "buffAll", "scope": "ally", "strength": 1, "duration": "end_of_turn" }] }
+  ],
+  "whathavewehere": [
+    { "trigger": "on_play", "steps": [{ "do": "returnFromDiscard", "cardType": "item", "keepUpTo": 1, "optional": true, "text": "return an item from your discard" }] },
+    { "trigger": "on_quest", "steps": [{ "do": "returnFromDiscard", "cardType": "item", "keepUpTo": 1, "optional": true, "text": "return an item from your discard" }] }
+  ],
+  "repurposed": [
+    { "trigger": "on_play", "steps": [{ "do": "returnFromDiscard", "cardType": "character", "subtype": "Toy", "keepUpTo": 99, "to": "bottom", "optional": true, "text": "put Toy characters on the bottom of your deck" }] }
+  ],
+  "stickwithme": [
+    { "trigger": "end_of_turn", "when": { "selfExerted": true }, "steps": [
+      { "do": "mayConfirm", "text": "draw cards equal to a chosen Ally's {S}?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "optional": true, "filter": { "subtype": "Ally" }, "text": "draw cards equal to its {S}" },
+      { "do": "drawByStat", "from": "t", "stat": "strength" }
+    ] }
+  ],
+  "secretpath": [
+    { "trigger": "on_ally_quest", "when": { "selfExerted": true }, "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "-2 {S} until your next turn" },
+      { "do": "debuff", "to": "t", "strength": 2, "duration": "untilNextTurn" }
+    ] }
+  ],
+  "letsdothis": [
+    { "trigger": "on_ally_challenge", "when": { "actorSubtype": "Super" }, "steps": [{ "do": "draw", "player": "self", "amount": 1 }] }
+  ],
+  "winnertakeall": [
+    { "trigger": "on_ally_challenge_banish", "when": { "actorSubtype": "Steel" }, "steps": [{ "do": "gainLore", "player": "self", "amount": 2 }] }
+  ],
+  "snap": [
+    { "trigger": "activated", "steps": [{ "do": "modal", "options": [
+      { "label": "Banish chosen item", "steps": [{ "do": "chooseItem", "as": "i", "scope": "any", "text": "banish an item" }, { "do": "banish", "to": "i" }] },
+      { "label": "Opposing character gets -2 {S}", "steps": [{ "do": "chooseCharacter", "as": "t", "scope": "enemy", "text": "-2 {S} this turn" }, { "do": "debuff", "to": "t", "strength": 2, "duration": "end_of_turn" }] }
+    ] }] }
+  ],
+  "readytoride": [
+    { "trigger": "activated", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "text": "gains Alert this turn" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Alert", "duration": "end_of_turn" }
+    ] }
+  ],
+  "biglift": [
+    { "trigger": "activated", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "filter": { "minStrength": 10 }, "text": "+3 {L} this turn" },
+      { "do": "buff", "to": "t", "lore": 3, "duration": "end_of_turn" }
+    ] }
+  ],
+  "extractofsteel": [
+    { "trigger": "activated", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "text": "gains Bodyguard until your next turn" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Bodyguard", "duration": "untilNextTurn" }
+    ] }
+  ],
+  "goodaim": [
+    { "trigger": "activated", "steps": [
+      { "do": "discardChoose", "amount": 1, "text": "discard a card" },
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "text": "deal 2 damage" },
+      { "do": "dealDamage", "to": "t", "amount": 2 }
+    ] }
+  ],
+  "awaken": [
+    { "trigger": "activated", "steps": [{ "do": "returnFromDiscard", "cardType": "character", "keepUpTo": 1, "to": "inkwellExerted", "optional": true, "text": "put a character from discard into your inkwell" }] }
+  ],
+  "putittogooduse": [
+    { "trigger": "cost", "free": true, "when": { "haveItemsAtLeast": 4 } }
+  ],
+  "thatdidthetrick": [
+    { "trigger": "activated", "when": { "removedDamageThisTurn": true }, "steps": [{ "do": "gainLore", "player": "self", "amount": 1 }] }
+  ],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],

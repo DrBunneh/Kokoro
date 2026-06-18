@@ -25,6 +25,8 @@
   "extralayers": [],
   "foreverstrong": [],
   "lowbatteries": [],
+  "villainousbond": [],
+  "friendlychorus": [{ "scope": "self", "keyword": "Singer", "keywordValue": 8, "whileOtherColorAtLeast": 2, "otherColor": "amber" }],
   "increasingwisdom": [{ "scope": "self", "lore": 1, "perCardUnder": true }],
   "countingcoins": [{ "scope": "self", "strength": 1, "willpower": 1, "perCardUnder": true }],
   "superhumanstrength": [{ "scope": "self", "strength": 3, "whileHasCardUnder": true }],

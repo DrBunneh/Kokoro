@@ -21,6 +21,9 @@ export type Trigger =
   | "on_banish"
   | "on_challenged" // when THIS character is challenged
   | "on_ally_challenged" // when one of your characters is challenged (binds `challenger`)
+  | "on_ally_quest" // when one of your OTHER characters quests (binds `quester`)
+  | "on_ally_challenge" // when one of your characters challenges (actor = attacker)
+  | "on_ally_challenge_banish" // when one of your OTHER characters banishes in a challenge
   | "on_play_action" // whenever you play an action/song (for your other cards)
   | "on_play_song" // whenever you play a song specifically
   | "on_play_character" // whenever you play a character (for your other cards)
@@ -106,6 +109,14 @@ export interface Condition {
   subtypeInDiscardAtLeast?: { subtype: string; count: number };
   /** You control at least one item (Belle - Apprentice Inventor). */
   haveOwnItem?: boolean;
+  /** The banished character belonged to an opponent (Headless Horseman). */
+  banishedOpponent?: boolean;
+  /** The triggering actor (challenger/quester) has this subtype (Mr. Incredible, Pluto-Steel). */
+  actorSubtype?: string;
+  /** You control at least N items (Scrooge - Resourceful Miser). */
+  haveItemsAtLeast?: number;
+  /** You removed damage from a character this turn (Julieta's Arepas). */
+  removedDamageThisTurn?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -215,7 +226,9 @@ export type Step =
   // Choose an item in play (suspends), then act on it (banish):
   | { do: "chooseItem"; as: string; scope?: Scope; text?: string; optional?: boolean }
   // Return card(s) from your discard to hand (suspends on a discard picker):
-  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; keepUpTo?: number; to?: "hand" | "bottom"; optional?: boolean; text?: string }
+  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; subtype?: string; keepUpTo?: number; to?: "hand" | "bottom" | "inkwellExerted"; optional?: boolean; text?: string }
+  // Draw cards equal to a bound character's strength (Scar - Finally King):
+  | { do: "drawByStat"; from: string; stat: "strength" | "willpower" }
   // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
   | { do: "discardHandDraw"; player?: Who; draw: number }
   // Opponent discards `amount` random cards:
@@ -408,7 +421,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "removeDamage": {
       const t = resolveTarget(state, ctx, step.to);
-      if (t) t.damage = Math.max(0, t.damage - step.amount);
+      if (t && t.damage > 0) { t.damage = Math.max(0, t.damage - step.amount); state.players[ctx.controller].removedDamageThisTurn = true; }
       break;
     }
     case "removeDamageDraw": {
@@ -416,7 +429,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       if (t) {
         const removed = Math.min(step.amount, t.damage);
         t.damage -= removed;
-        if (removed > 0) drawCards(state.players[ctx.controller], removed);
+        if (removed > 0) { drawCards(state.players[ctx.controller], removed); state.players[ctx.controller].removedDamageThisTurn = true; }
       }
       break;
     }
@@ -711,6 +724,14 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "drawByStat": {
+      const t = resolveTarget(state, ctx, step.from);
+      if (t) {
+        const n = step.stat === "willpower" ? effectiveWillpower(state, t) : effectiveStrength(state, t);
+        if (n > 0) { drawCards(state.players[ctx.controller], n); for (let k = 0; k < n; k++) ctx.events?.onDraw?.(ctx.controller); }
+      }
+      break;
+    }
     case "drawToMatchOpponentHand": {
       const p = state.players[ctx.controller];
       const need = state.players[otherPlayer(ctx.controller)].hand.length - p.hand.length;
@@ -862,7 +883,7 @@ export function runSteps(
     }
     if (step.do === "returnFromDiscard") {
       const p = state.players[ctx.controller];
-      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (step.maxCost == null || c.printed.cost <= step.maxCost) && (!step.cardName || c.printed.name.toLowerCase() === step.cardName.toLowerCase() || c.printed.fullName.toLowerCase() === step.cardName.toLowerCase());
+      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (step.maxCost == null || c.printed.cost <= step.maxCost) && (!step.cardName || c.printed.name.toLowerCase() === step.cardName.toLowerCase() || c.printed.fullName.toLowerCase() === step.cardName.toLowerCase()) && (!step.subtype || c.printed.subtypes.some((s) => s.toLowerCase() === step.subtype!.toLowerCase()));
       const keepUpTo = step.keepUpTo ?? 1;
       const nsK = "__rfdKept";
       if (pending != null) {
@@ -872,7 +893,9 @@ export function runSteps(
           if (idx >= 0) {
             const card = p.discard.splice(idx, 1)[0]!;
             card.damage = 0; card.exerted = false; card.justPlayed = false; card.appliedEffects = [];
-            if (step.to === "bottom") p.deck.push(card); else p.hand.push(card);
+            if (step.to === "bottom") p.deck.push(card);
+            else if (step.to === "inkwellExerted") { card.exerted = true; card.justPlayed = true; p.inkwell.push(card); }
+            else p.hand.push(card);
             kept += 1;
             ctx.vars[nsK] = String(kept);
           }
