@@ -151,7 +151,35 @@ scheduled last.
   Formidable), on_play_item trigger covering item watchers (Maurice's Workshop),
   plus activated buffs (Medallion Weights, Ice Block).
 
-Running total for this batch: **DONE 198, PARTIAL 27, TODO 33.**
+- **Waves 6–11** built: play-for-free engine (`playFree`), conditional free
+  play + quest-lock (Lilo), damage-prevention layer + strength floor (Hercules,
+  Lilo-Bundled, Elisa), controller-wide banish/inkwell watches (Sid, Babyhead,
+  Emerald, Sapphire Coil), once-per-turn triggers, location start-of-turn lore,
+  challenge-ready (Cinderella), inkwell ramp (Webby), scry-to-inkwell (Kida),
+  draw-to-match (Clarabelle), plus Tigger/Woody-Leader approximations.
+
+Running total for this batch: **DONE 217, PARTIAL 24, TODO 17.**
+
+### The remaining 17 — blocked on UI surfaces or an interpreter refactor
+These can't be done cleanly with the current pure-interpreter + no-location-UI
+architecture; each needs one of the following first:
+
+- **Location movement + "while here" (UI)**: The Library `lostinabook`, Casa
+  Madrigal `healinghome`, Seven Dwarfs' Mine `mountaindefense`. (Locations now
+  generate lore; they just can't host characters yet.)
+- **`on_draw` / opponent-discard watches (interpreter refactor)**: Royal Guard
+  `heavilyarmed`, Diablo-Devoted `circlefarandwide`, Prince John `isentenceyou`.
+  Firing these requires threading the effects table into `runSteps` so draws/
+  discards *inside* an effect can fire further triggers.
+- **Alternate play cost with a player choice (UI)**: Belle-Apprentice
+  `whatamess`, Hand-in-the-Box `springloaded`, RC `lowbatteries` (pay-to-act),
+  Moana `ancestrallegacy` (ink from discard).
+- **Reveal-and-branch / opponent decisions**: Daisy `bigprize`, Hades
+  `whatdyasay`, Jack-Jack `weirdthingsarehappening`.
+- **Shift "put a card under" + dynamic-count scry**: Cheshire `itsloadsoffun`,
+  Pete-Ghost `forebodingglance`.
+- **Re-resolve a song from discard**: Ursula `whatadeal`.
+- **Multi-pick discard-to-bottom + buff**: Roller Bob `timetomove`.
 
 ### Still TODO (need structural work — Wave 5b/5c)
 - **Cards-under (Shift stack)**: increasingwisdom, superhumanstrength,

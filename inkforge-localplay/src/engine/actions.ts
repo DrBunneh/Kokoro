@@ -278,6 +278,7 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.selfHasCardUnder && source.cardsUnder.length === 0) return false;
   if (when.ownToyBanishedThisTurn && !p.ownToyBanishedThisTurn) return false;
   if (when.opponentInkwellMoreThanYou && state.players[otherPlayer(controller)].inkwell.length <= p.inkwell.length) return false;
+  if (when.opponentHandMoreThanYou && state.players[otherPlayer(controller)].hand.length <= p.hand.length) return false;
   return true;
 }
 
@@ -975,6 +976,14 @@ export function reduce(
             } else {
               const mustKeep = !(lead.optional ?? false) && kept === 0 && legal.length > 0;
               inject = mustKeep ? legal[0]!.instanceId : "__rfdstop__";
+            }
+          } else if (lead && lead.do === "scryToInkwell") {
+            const pd = next.players[prompt.controller].deck;
+            const window = pd.slice(0, lead.count);
+            if (action.targetInstanceId != null && window.some((c) => c.instanceId === action.targetInstanceId)) {
+              inject = action.targetInstanceId;
+            } else {
+              inject = window[0]?.instanceId; // mandatory: default to the first
             }
           } else if (lead && lead.do === "playFree") {
             const from = lead.from ?? "hand";

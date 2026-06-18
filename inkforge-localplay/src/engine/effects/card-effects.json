@@ -1546,6 +1546,15 @@
       { "do": "putTopToInkwell", "exerted": true }
     ] }
   ],
+  "keytothepuzzle": [
+    { "trigger": "activated", "steps": [{ "do": "scryToInkwell", "count": 2, "text": "look at the top 2; put one into your inkwell" }] }
+  ],
+  "keepinstep": [
+    { "trigger": "end_of_turn", "when": { "opponentHandMoreThanYou": true }, "steps": [
+      { "do": "mayConfirm", "text": "draw until your hand matches the opponent's?" },
+      { "do": "drawToMatchOpponentHand" }
+    ] }
+  ],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],

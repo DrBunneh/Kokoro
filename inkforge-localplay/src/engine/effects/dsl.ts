@@ -93,6 +93,8 @@ export interface Condition {
   ownToyBanishedThisTurn?: boolean;
   /** An opponent has more cards in their inkwell than you (Webby - Junior Prospector). */
   opponentInkwellMoreThanYou?: boolean;
+  /** An opponent has more cards in hand than you (Clarabelle - Light on Her Hooves). */
+  opponentHandMoreThanYou?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -210,6 +212,11 @@ export type Step =
   | { do: "discardChoose"; amount?: number; amountPer?: AmountPer; text?: string }
   // Put the top card of your deck into your inkwell (Webby - Junior Prospector):
   | { do: "putTopToInkwell"; exerted?: boolean }
+  // Look at the top `count`, put the chosen one into your inkwell (exerted), rest
+  // stay on top in order (Kida - Creative Thinker):
+  | { do: "scryToInkwell"; count: number; text?: string }
+  // Draw until your hand matches the opponent's size (Clarabelle - Light on Her Hooves):
+  | { do: "drawToMatchOpponentHand" }
   // Play the source card from your discard into play (Lilo - Escape Artist):
   | { do: "playFromDiscard"; exerted?: boolean }
   // Play ANOTHER card (from hand or discard) into play for free (Lady - Family Dog,
@@ -662,6 +669,12 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "drawToMatchOpponentHand": {
+      const p = state.players[ctx.controller];
+      const need = state.players[otherPlayer(ctx.controller)].hand.length - p.hand.length;
+      if (need > 0) drawCards(p, need);
+      break;
+    }
     case "playFromDiscard": {
       const src = ctx.source;
       const p = state.players[ctx.controller];
@@ -843,6 +856,23 @@ export function runSteps(
       const pool = zone.filter(matches);
       if (pool.length === 0) continue;
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? true, pick: from === "discard" ? "discard" : "hand", handOwner: ctx.controller, reveal: from === "discard" ? pool.map((c) => c.instanceId) : undefined };
+    }
+    if (step.do === "scryToInkwell") {
+      const p = state.players[ctx.controller];
+      if (pending != null) {
+        const idx = p.deck.findIndex((c) => c.instanceId === pending);
+        if (idx >= 0 && idx < step.count) {
+          const card = p.deck.splice(idx, 1)[0]!;
+          card.exerted = true; card.justPlayed = true; card.appliedEffects = []; card.damage = 0;
+          p.inkwell.push(card);
+          logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_PUT_INTO_INKWELL", message: `Put ${card.printed.fullName} into inkwell`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+        }
+        pending = undefined;
+        continue;
+      }
+      const top = p.deck.slice(0, step.count);
+      if (top.length === 0) continue;
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: false, pick: "deck", reveal: top.map((c) => c.instanceId) };
     }
     if (step.do === "lookAtTop") {
       const p = state.players[ctx.controller];
