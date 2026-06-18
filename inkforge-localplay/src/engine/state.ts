@@ -79,7 +79,7 @@ export interface PlayerState {
   /** Cards put into this player's discard this turn (for "if 2+ discarded" gates). */
   discardedThisTurn: number;
   /** Cards this player has played this turn (for "if you played a Princess" gates). */
-  playedThisTurn: { type: import("@/data/card-types").CardType; subtypes: string[]; name: string }[];
+  playedThisTurn: { type: import("@/data/card-types").CardType; subtypes: string[]; name: string; id?: string }[];
   /** One of this player's own Toy characters was banished this turn (Wind-Up Frog). */
   ownToyBanishedThisTurn?: boolean;
   /** This player removed damage from a character this turn (Julieta's Arepas). */

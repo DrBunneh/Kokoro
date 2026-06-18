@@ -231,6 +231,7 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
     const want = when.playedSubtype.toLowerCase();
     if (!played.some((x) => x.subtypes.some((s) => s.toLowerCase() === want))) return false;
   }
+  if (when.playedOtherCharacterThisTurn && !played.some((x) => x.type === "character" && x.id !== source.instanceId)) return false;
   if (when.discardedAtLeast != null && (p.discardedThisTurn ?? 0) < when.discardedAtLeast) return false;
   if (when.selfUndamaged && source.damage > 0) return false;
   if (when.selfDamaged && source.damage <= 0) return false;
@@ -293,6 +294,12 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.haveOwnItem && p.items.length === 0) return false;
   if (when.haveItemsAtLeast != null && p.items.length < when.haveItemsAtLeast) return false;
   if (when.removedDamageThisTurn && !p.removedDamageThisTurn) return false;
+  if (when.haveCharWillpowerAtLeast != null && !p.field.some((c) => c.printed.type === "character" && effectiveWillpower(state, c) >= when.haveCharWillpowerAtLeast!)) return false;
+  if (when.opponentMoreCharacters) {
+    const mine = p.field.filter((c) => c.printed.type === "character").length;
+    const theirs = state.players[otherPlayer(controller)].field.filter((c) => c.printed.type === "character").length;
+    if (theirs <= mine) return false;
+  }
   return true;
 }
 
@@ -411,7 +418,7 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
 
 /** Record a card a player played this turn (for "if you played a …" gates). */
 function recordPlay(p: PlayerState, card: CardInstance): void {
-  (p.playedThisTurn ??= []).push({ type: card.printed.type, subtypes: card.printed.subtypes ?? [], name: card.printed.name });
+  (p.playedThisTurn ??= []).push({ type: card.printed.type, subtypes: card.printed.subtypes ?? [], name: card.printed.name, id: card.instanceId });
 }
 
 /**
@@ -581,6 +588,15 @@ function makeEvents(state: GameState, logs: LogEntry[], effects: CardEffects, ba
       state.eventGuard = true;
       try {
         fireWatch(state, "on_opponent_discard", otherPlayer(player), logs, effects, banished);
+      } finally {
+        state.eventGuard = false;
+      }
+    },
+    onRemoveDamage: (player) => {
+      if (state.eventGuard) return;
+      state.eventGuard = true;
+      try {
+        fireWatch(state, "on_remove_damage", player, logs, effects, banished);
       } finally {
         state.eventGuard = false;
       }
@@ -1207,6 +1223,10 @@ export function reduce(
               const mustKeep = !(lead.optional ?? false) && kept === 0 && legal.length > 0;
               inject = mustKeep ? legal[0]!.instanceId : "__rfdstop__";
             }
+          } else if (lead && lead.do === "scryTopOrBottom") {
+            const pd = next.players[prompt.controller].deck;
+            const window = pd.slice(0, lead.count);
+            inject = action.targetInstanceId != null && window.some((c) => c.instanceId === action.targetInstanceId) ? action.targetInstanceId : "__sobstop__";
           } else if (lead && lead.do === "scryToInkwell") {
             const pd = next.players[prompt.controller].deck;
             const window = pd.slice(0, lead.count);

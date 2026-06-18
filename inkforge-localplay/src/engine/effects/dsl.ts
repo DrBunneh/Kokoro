@@ -36,6 +36,7 @@ export type Trigger =
   | "on_opponent_draw" // whenever an opponent draws on their turn (your field watches)
   | "on_opponent_discard" // whenever an opponent discards a card (your field watches)
   | "on_put_under" // whenever a card is put under this character (Boost / Shift)
+  | "on_remove_damage" // whenever you remove damage from one of your characters (your field watches)
   | "on_move_here" // a character was moved to this location (binds `mover`)
   | "on_quest_here" // a character quested while at this location (binds `quester`)
   | "on_banish_here" // a character was banished while at this location
@@ -55,6 +56,8 @@ export interface Condition {
   playedType?: CardType;
   /** You played a character with this subtype this turn (e.g. "Princess"). */
   playedSubtype?: string;
+  /** You played a character *other than the source* this turn ("Traveler" cards). */
+  playedOtherCharacterThisTurn?: boolean;
   /** At least N cards were put into your discard this turn. */
   discardedAtLeast?: number;
   /** The source character has no damage. */
@@ -118,6 +121,10 @@ export interface Condition {
   haveItemsAtLeast?: number;
   /** You removed damage from a character this turn (Julieta's Arepas). */
   removedDamageThisTurn?: boolean;
+  /** You have a character in play with at least this {W} (Chip - Team Player, Monterey Jack). */
+  haveCharWillpowerAtLeast?: number;
+  /** An opponent has more characters in play than you (When You Need Help, Just Call). */
+  opponentMoreCharacters?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -157,7 +164,7 @@ export function scryMatch(card: import("@/data/card-types").PrintedCard, f?: Scr
 /** A single primitive action. `to`/`target` reference a bound var name or "self". */
 export type Step =
   // Targeting (suspends for a tap; binds the chosen instance to `as`):
-  | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean; filter?: TargetFilter }
+  | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean; filter?: TargetFilter; includeLocations?: boolean }
   // Optional "may" gate — suspends for a Yes/No before the steps that follow:
   | { do: "mayConfirm"; text?: string }
   // Scry: reveal the top `count` of your deck, keep up to `keepUpTo` (default 1,
@@ -201,15 +208,17 @@ export type Step =
   | { do: "gainLoreByStrength"; max?: number }
   // Gain lore equal to a bound character's stat (Pocahontas {L} / Go Go damage / Lucky Dime {L}):
   | { do: "gainLoreEqual"; from: string; stat: "lore" | "damage" | "strength" }
-  // Area damage to every character in scope:
-  | { do: "dealDamageAll"; scope?: Scope; amount: number }
+  // Area damage to every character in scope (optionally excluding the source):
+  | { do: "dealDamageAll"; scope?: Scope; amount: number; excludeSelf?: boolean }
+  // Add a bound character's own {W}/{S} to its own {S} this turn (Ranger Team-Up):
+  | { do: "buffByOwnStat"; to: string; stat: "strength" | "willpower" }
   // Movement / removal:
   | { do: "banish"; to: string }
   | { do: "returnToHand"; to: string }
   // Stats (until end of turn unless duration given):
   | { do: "buff" | "debuff"; to: string; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; amountPer?: AmountPer }
   // Area stat change to every character in scope (optionally excluding the source):
-  | { do: "buffAll" | "debuffAll"; scope?: Scope; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; excludeSelf?: boolean }
+  | { do: "buffAll" | "debuffAll"; scope?: Scope; subtype?: string; strength?: number; willpower?: number; lore?: number; keyword?: string; keywordValue?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; excludeSelf?: boolean }
   | { do: "ready" | "exert"; to: string }
   // Bar a bound character from questing for the rest of this turn (Lilo - Uproar):
   | { do: "lockQuest"; to: string }
@@ -229,15 +238,15 @@ export type Step =
   // Choose an item in play (suspends), then act on it (banish):
   | { do: "chooseItem"; as: string; scope?: Scope; text?: string; optional?: boolean }
   // Return card(s) from your discard to hand (suspends on a discard picker):
-  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; subtype?: string; keepUpTo?: number; to?: "hand" | "bottom" | "inkwellExerted"; optional?: boolean; text?: string }
+  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; subtype?: string; keepUpTo?: number; to?: "hand" | "bottom" | "inkwellExerted" | "top"; optional?: boolean; text?: string }
   // Draw cards equal to a bound character's strength (Scar - Finally King):
   | { do: "drawByStat"; from: string; stat: "strength" | "willpower" }
   // The player whose turn is ending discards down to `size` cards (Goliath):
   | { do: "discardToHandSize"; size: number }
   // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
   | { do: "discardHandDraw"; player?: Who; draw: number }
-  // Opponent discards `amount` random cards:
-  | { do: "randomDiscard"; amount: number }
+  // A player discards `amount` random cards (default the opponent):
+  | { do: "randomDiscard"; amount: number; player?: Who }
   // Opponents can't play actions (or items) until your next turn:
   | { do: "lockout"; items?: boolean }
   // Cards / lore ("each" draws for both players — Amethyst Chromicon / Donald):
@@ -247,6 +256,10 @@ export type Step =
   | { do: "discardChoose"; amount?: number; amountPer?: AmountPer; text?: string }
   // Put the top card of your deck into your inkwell (Webby - Junior Prospector):
   | { do: "putTopToInkwell"; exerted?: boolean }
+  // Mill the top `amount` cards of your deck into your discard (Preston, Lyle):
+  | { do: "mill"; amount: number; player?: Who }
+  // Look at the top `count`, put each on the top or bottom of your deck (Dr. Sara Bellum):
+  | { do: "scryTopOrBottom"; count: number; text?: string }
   // Look at the top `count`, put the chosen one into your inkwell (exerted), rest
   // stay on top in order (Kida - Creative Thinker):
   | { do: "scryToInkwell"; count: number; text?: string }
@@ -319,6 +332,7 @@ export interface EffectContext {
 export interface EffectEvents {
   onDraw?(player: PlayerId): void;
   onDiscard?(player: PlayerId): void;
+  onRemoveDamage?(player: PlayerId, amount: number): void;
 }
 
 /** A suspended sequence awaiting a target choice. Serialisable (frame-safe). */
@@ -356,7 +370,7 @@ export function targetMatches(
   step: Extract<Step, { do: "chooseCharacter" }>,
   strength: number,
 ): boolean {
-  if (card.printed.type !== "character") return false;
+  if (card.printed.type !== "character" && !(step.includeLocations && card.printed.type === "location")) return false;
   const scope = step.scope ?? "any";
   if (scope === "ally" && owner !== controller) return false;
   if (scope === "enemy" && owner === controller) return false;
@@ -431,12 +445,28 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "dealDamageAll": {
       const amount = step.amount;
-      for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) hit(state, ctx, t, amount, logs);
+      for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) {
+        if (step.excludeSelf && t.instanceId === ctx.source.instanceId) continue;
+        hit(state, ctx, t, amount, logs);
+      }
+      break;
+    }
+    case "buffByOwnStat": {
+      const t = resolveTarget(state, ctx, step.to);
+      if (t) {
+        const amt = step.stat === "willpower" ? effectiveWillpower(state, t) : effectiveStrength(state, t);
+        if (amt !== 0) t.appliedEffects.push({ source: ctx.source.instanceId, strength: amt, duration: "end_of_turn", castBy: ctx.controller });
+      }
       break;
     }
     case "removeDamage": {
       const t = resolveTarget(state, ctx, step.to);
-      if (t && t.damage > 0) { t.damage = Math.max(0, t.damage - step.amount); state.players[ctx.controller].removedDamageThisTurn = true; }
+      if (t && t.damage > 0) {
+        const removed = Math.min(step.amount, t.damage);
+        t.damage -= removed;
+        state.players[ctx.controller].removedDamageThisTurn = true;
+        ctx.events?.onRemoveDamage?.(ctx.controller, removed);
+      }
       break;
     }
     case "removeDamageDraw": {
@@ -444,7 +474,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       if (t) {
         const removed = Math.min(step.amount, t.damage);
         t.damage -= removed;
-        if (removed > 0) { drawCards(state.players[ctx.controller], removed); state.players[ctx.controller].removedDamageThisTurn = true; }
+        if (removed > 0) { drawCards(state.players[ctx.controller], removed); state.players[ctx.controller].removedDamageThisTurn = true; ctx.events?.onRemoveDamage?.(ctx.controller, removed); }
       }
       break;
     }
@@ -505,11 +535,14 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       const s = step.do === "debuffAll" ? -1 : 1;
       for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) {
         if (step.excludeSelf && t.instanceId === ctx.source.instanceId) continue;
+        if (step.subtype && !t.printed.subtypes.some((st) => st.toLowerCase() === step.subtype!.toLowerCase())) continue;
         t.appliedEffects.push({
           source: ctx.source.instanceId,
           strength: step.strength != null ? s * step.strength : undefined,
           willpower: step.willpower != null ? s * step.willpower : undefined,
           lore: step.lore != null ? s * step.lore : undefined,
+          keyword: step.keyword,
+          keywordValue: step.keywordValue,
           duration: step.duration ?? "end_of_turn",
           castBy: ctx.controller,
         });
@@ -543,6 +576,8 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         const moved = Math.min(step.amount, from.damage);
         from.damage -= moved;
         to.damage += moved;
+        // Moving damage off one of your characters counts as removing damage.
+        if (moved > 0) { const fl = findInstance(state, from.instanceId); if (fl && fl.owner === ctx.controller) { state.players[ctx.controller].removedDamageThisTurn = true; ctx.events?.onRemoveDamage?.(ctx.controller, moved); } }
         const loc = findInstance(state, to.instanceId);
         if (loc && to.damage >= effectiveWillpower(state, to)) {
           banishCard(state.players[loc.owner], to, logs, state.turnNumber);
@@ -587,13 +622,15 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "randomDiscard": {
-      const opp = state.players[otherPlayer(ctx.controller)];
+      // Defaults to the opponent; pass player:"self" for own-hand random discard.
+      const pid = step.player === "self" ? ctx.controller : otherPlayer(ctx.controller);
+      const opp = state.players[pid];
       const rng = new Rng(state.rngSeed, state.rngCursor);
       for (let k = 0; k < step.amount && opp.hand.length > 0; k++) {
         const i = rng.int(opp.hand.length);
         opp.discard.push(opp.hand.splice(i, 1)[0]!);
         opp.discardedThisTurn = (opp.discardedThisTurn ?? 0) + 1;
-        ctx.events?.onDiscard?.(otherPlayer(ctx.controller));
+        ctx.events?.onDiscard?.(pid);
       }
       state.rngCursor = rng.cursor;
       break;
@@ -777,6 +814,17 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "mill": {
+      const p = state.players[player(ctx, step.player)];
+      for (let k = 0; k < step.amount; k++) {
+        const c = p.deck.shift();
+        if (!c) break;
+        p.discard.push(c);
+        p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1;
+        ctx.events?.onDiscard?.(player(ctx, step.player));
+      }
+      break;
+    }
     case "drawToMatchOpponentHand": {
       const p = state.players[ctx.controller];
       const need = state.players[otherPlayer(ctx.controller)].hand.length - p.hand.length;
@@ -939,6 +987,7 @@ export function runSteps(
             const card = p.discard.splice(idx, 1)[0]!;
             card.damage = 0; card.exerted = false; card.justPlayed = false; card.appliedEffects = [];
             if (step.to === "bottom") p.deck.push(card);
+            else if (step.to === "top") p.deck.unshift(card);
             else if (step.to === "inkwellExerted") { card.exerted = true; card.justPlayed = true; p.inkwell.push(card); }
             else p.hand.push(card);
             kept += 1;
@@ -1001,6 +1050,25 @@ export function runSteps(
       const top = p.deck.slice(0, step.count);
       if (top.length === 0) continue;
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: false, pick: "deck", reveal: top.map((c) => c.instanceId) };
+    }
+    if (step.do === "scryTopOrBottom") {
+      const p = state.players[ctx.controller];
+      if (pending != null) {
+        const window = p.deck.slice(0, step.count);
+        const after = p.deck.slice(step.count);
+        if (pending === "__sobstop__") {
+          p.deck = [...after, ...window]; // all to the bottom
+        } else {
+          const keep = window.filter((c) => c.instanceId === pending);
+          const rest = window.filter((c) => c.instanceId !== pending);
+          p.deck = [...keep, ...after, ...rest]; // chosen on top, rest to the bottom
+        }
+        pending = undefined;
+        continue;
+      }
+      const top = p.deck.slice(0, step.count);
+      if (top.length === 0) continue;
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: true, pick: "deck", reveal: top.map((c) => c.instanceId) };
     }
     if (step.do === "lookAtTop") {
       const p = state.players[ctx.controller];

@@ -14,9 +14,11 @@ import type { CardInstance, GameState, PlayerId } from "./state";
 
 export interface StaticDef {
   /** Who the modifier applies to, relative to the source's controller. */
-  scope: "self" | "yours" | "yoursSubtype" | "yoursColor" | "opponents";
-  /** Subtype filter for scope "yoursSubtype" (e.g. "Pirate"). */
+  scope: "self" | "yours" | "yoursSubtype" | "yoursColor" | "yoursName" | "opponents" | "here" | "yoursLocations";
+  /** Subtype filter for scope "yoursSubtype" / "here" (e.g. "Pirate", "Robot"). */
   subtype?: string;
+  /** Name filter for scope "yoursName" (e.g. "Dale", "Woody"). */
+  name?: string;
   /** Color filter for scope "yoursColor" (e.g. "amber"). */
   color?: string;
   strength?: number;
@@ -59,6 +61,16 @@ export interface StaticDef {
   /** Only while the controller has at least N other characters of this color (Mickey - Amber Champion). */
   whileOtherColorAtLeast?: number;
   otherColor?: string;
+  /** Only while an opponent has a damaged character in play (The Queen - Evil Ruler). */
+  whileOpponentHasDamaged?: boolean;
+  /** Only while the controller has a character with this name in play (Dale - Excited Friend). */
+  whileControllerHasName?: string;
+  /** Only while an opponent has more lore than the controller (The Queen - Devious Disguise). */
+  whileOpponentMoreLore?: boolean;
+  /** (scope "here") only while exactly one character is at the source location (Andy's Room). */
+  whileOnlyOneHere?: boolean;
+  /** Only during the controller's turn while ≥N cards went to their discard this turn (Milo Thatch). */
+  whileDiscardedThisTurnAtLeast?: number;
 }
 
 /**
@@ -137,11 +149,25 @@ function applies(def: StaticDef, source: CardInstance, srcOwner: PlayerId, targe
     case "yoursColor":
       if (def.excludeSelf && source.instanceId === target.instanceId) return false;
       return tgtOwner === srcOwner && target.printed.type === "character" && !!def.color && target.printed.colors.some((c) => c.toLowerCase() === def.color!.toLowerCase());
+    case "yoursName":
+      return tgtOwner === srcOwner && target.printed.type === "character" && !!def.name && target.printed.name.toLowerCase() === def.name.toLowerCase();
     case "opponents":
       return tgtOwner !== srcOwner && target.printed.type === "character";
+    case "here":
+      return target.printed.type === "character" && target.atLocation === source.instanceId &&
+        (!def.subtype || target.printed.subtypes.some((s) => s.toLowerCase() === def.subtype!.toLowerCase()));
+    case "yoursLocations":
+      return tgtOwner === srcOwner && target.printed.type === "location";
     default:
       return false;
   }
+}
+
+/** Number of characters currently at `location`. */
+function charsHere(state: GameState, location: CardInstance): number {
+  let n = 0;
+  for (const owner of [1, 2] as PlayerId[]) for (const c of state.players[owner].field) if (c.atLocation === location.instanceId) n++;
+  return n;
 }
 
 /** Does a card have a keyword from its printed abilities or a one-shot grant?
@@ -186,6 +212,11 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
           const n = state.players[srcOwner].field.filter((c) => c.printed.type === "character" && c.instanceId !== src.instanceId && c.printed.colors.some((col) => col.toLowerCase() === want)).length;
           if (n < def.whileOtherColorAtLeast) continue;
         }
+        if (def.whileOpponentHasDamaged && !state.players[srcOwner === 1 ? 2 : 1].field.some((c) => c.printed.type === "character" && c.damage > 0)) continue;
+        if (def.whileControllerHasName && ![...state.players[srcOwner].field, ...state.players[srcOwner].items].some((c) => c.printed.name.toLowerCase() === def.whileControllerHasName!.toLowerCase())) continue;
+        if (def.whileOpponentMoreLore && state.players[srcOwner === 1 ? 2 : 1].lore <= state.players[srcOwner].lore) continue;
+        if (def.whileOnlyOneHere && charsHere(state, src) !== 1) continue;
+        if (def.whileDiscardedThisTurnAtLeast != null && (state.currentPlayer !== srcOwner || (state.players[srcOwner].discardedThisTurn ?? 0) < def.whileDiscardedThisTurnAtLeast)) continue;
         if (def.targetHasKeyword && !targetHasPrintedKeyword(card, def.targetHasKeyword)) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
         const scale = def.perDiscard
