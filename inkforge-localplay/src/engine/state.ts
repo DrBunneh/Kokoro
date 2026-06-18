@@ -153,6 +153,8 @@ export interface GameState {
   usedActivated?: string[];
   /** Re-entrancy guard so a draw/discard watch's own draws don't cascade. */
   eventGuard?: boolean;
+  /** Names of characters banished this turn (Buzz's Arm "Missing Piece"). Reset each turn. */
+  banishedNamesThisTurn?: string[];
 }
 
 export const WIN_LORE = 20;

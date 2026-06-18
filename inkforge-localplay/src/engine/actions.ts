@@ -301,6 +301,7 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
     if (theirs <= mine) return false;
   }
   if (when.enemyBanishedInChallengeThisTurn && !p.enemyBanishedInChallengeThisTurn) return false;
+  if (when.nameBanishedThisTurn && !(state.banishedNamesThisTurn ?? []).some((n) => n.toLowerCase() === when.nameBanishedThisTurn!.toLowerCase())) return false;
   return true;
 }
 
@@ -404,6 +405,7 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
     if (card.printed.type === "character" && card.printed.subtypes.some((s) => s.toLowerCase() === "toy")) {
       state.players[owner].ownToyBanishedThisTurn = true;
     }
+    if (card.printed.type === "character") (state.banishedNamesThisTurn ??= []).push(card.printed.name);
     fireTrigger(state, "on_banish", card, owner, logs, effects, true, queue);
     // "Whenever a character is banished while here" (The Library).
     if (card.atLocation) {
@@ -514,6 +516,11 @@ function fireLocationHere(
     const defs = (effects[sa.slug] ?? []).filter((d) => d.trigger === trigger);
     for (const def of defs) {
       if (!conditionMet(state, owner, location, def.when)) continue;
+      if (def.oncePerTurn) {
+        const key = `${location.instanceId}:${sa.slug}:${trigger}`;
+        if ((state.usedActivated ?? []).includes(key)) continue;
+        (state.usedActivated ??= []).push(key);
+      }
       const ctx: EffectContext = { controller: owner, source: location, vars: { [varName]: boundId }, banished, events: makeEvents(state, logs, effects, banished) };
       const suspension = runSteps(state, def.steps ?? [], ctx, logs);
       if (suspension) {
@@ -650,6 +657,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   state.players[player].extraInk = 0;
   state.endStepDone = false;
   state.usedActivated = [];
+  state.banishedNamesThisTurn = [];
   // "Until the start of your next turn" effects expire when their caster's turn begins.
   for (const pid of [1, 2] as PlayerId[]) {
     for (const c of [...state.players[pid].field, ...state.players[pid].items]) {
@@ -1154,6 +1162,11 @@ export function reduce(
       if (defenderIsChar) {
         fireTrigger(next, "on_challenged", defender, otherPlayer(next.currentPlayer), logs, effects, true, banished);
         fireAllyChallenged(next, otherPlayer(next.currentPlayer), attacker, defender.instanceId, logs, effects, banished);
+        // "Whenever a character is challenged while here" (Pizza Planet).
+        if (defender.atLocation) {
+          const dl = dp.field.find((c) => c.instanceId === defender.atLocation && c.printed.type === "location");
+          if (dl) fireLocationHere(next, dl, otherPlayer(next.currentPlayer), "on_challenged_here", "challenged", defender.instanceId, logs, effects, banished);
+        }
       }
 
       // Challenge damage (simultaneous), with Challenger +N and Resist applied.
@@ -1183,6 +1196,11 @@ export function reduce(
         fireTrigger(next, "on_challenge_banish", attacker, next.currentPlayer, logs, effects, true, banished);
         // "Whenever one of your other [Steel] characters banishes in a challenge" (Pluto - Steel).
         fireAllyActor(next, "on_ally_challenge_banish", next.currentPlayer, attacker, "challenger", logs, effects, banished);
+        // "...banishes another in a challenge while here" (Island of Nomanisan).
+        if (attacker.atLocation) {
+          const al = ap.field.find((c) => c.instanceId === attacker.atLocation && c.printed.type === "location");
+          if (al) fireLocationHere(next, al, next.currentPlayer, "on_challenge_banish_here", "banisher", attacker.instanceId, logs, effects, banished);
+        }
       }
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };

@@ -1874,6 +1874,9 @@
   "regroup": [{ "trigger": "on_ally_challenge_banish", "steps": [{ "do": "mayConfirm", "text": "ready a Super character (it can't quest this turn)?" }, { "do": "chooseCharacter", "as": "t", "scope": "ally", "optional": true, "filter": { "subtype": "Super" }, "text": "ready" }, { "do": "ready", "to": "t" }, { "do": "lockQuest", "to": "t" }] }],
   "cardadvantage": [{ "trigger": "on_play", "when": { "enemyBanishedInChallengeThisTurn": true }, "steps": [{ "do": "draw", "player": "self", "amount": 2 }] }],
   "mendthebond": [{ "trigger": "activated", "steps": [{ "do": "shuffleDiscardIntoDeck", "player": "each", "cardType": "character" }] }],
+  "missingpiece": [{ "trigger": "cost", "free": true, "when": { "nameBanishedThisTurn": "Buzz Lightyear" } }],
+  "heavilyguarded": [{ "trigger": "on_challenged_here", "steps": [{ "do": "loseLore", "player": "opponent", "amount": 1 }] }],
+  "cheapshot": [{ "trigger": "on_challenge_banish_here", "oncePerTurn": true, "steps": [{ "do": "mayConfirm", "text": "deal 2 damage to a chosen character?" }, { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "deal 2 damage" }, { "do": "dealDamage", "to": "t", "amount": 2 }] }],
 
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

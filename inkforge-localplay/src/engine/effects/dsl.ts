@@ -40,6 +40,8 @@ export type Trigger =
   | "on_move_here" // a character was moved to this location (binds `mover`)
   | "on_quest_here" // a character quested while at this location (binds `quester`)
   | "on_banish_here" // a character was banished while at this location
+  | "on_challenged_here" // a character at this location was challenged (Pizza Planet)
+  | "on_challenge_banish_here" // a character here banished another in a challenge (Island of Nomanisan)
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
@@ -127,6 +129,8 @@ export interface Condition {
   opponentMoreCharacters?: boolean;
   /** An opposing character was banished in a challenge this turn (Card Advantage). */
   enemyBanishedInChallengeThisTurn?: boolean;
+  /** A character with this name was banished this turn (Buzz's Arm). */
+  nameBanishedThisTurn?: string;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
