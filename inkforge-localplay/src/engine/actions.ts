@@ -275,6 +275,8 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
     if (!ev?.banishedCard?.printed.subtypes.some((s) => s.toLowerCase() === want)) return false;
   }
   if (when.banishedMine && ev?.banishedOwner !== controller) return false;
+  if (when.selfHasCardUnder && source.cardsUnder.length === 0) return false;
+  if (when.ownToyBanishedThisTurn && !p.ownToyBanishedThisTurn) return false;
   return true;
 }
 
@@ -296,6 +298,12 @@ function runAbility(
     for (const def of matching) {
       // A gated effect only fires when its condition holds (else it's skipped).
       if (!conditionMet(state, controller, source, def.when)) continue;
+      // "Once during your turn" triggered abilities resolve at most once per turn.
+      if (def.oncePerTurn) {
+        const key = `${source.instanceId}:${sa.slug}:${trigger}`;
+        if ((state.usedActivated ?? []).includes(key)) continue;
+        (state.usedActivated ??= []).push(key);
+      }
       const ctx: EffectContext = { controller, source, vars: {}, banished };
       const suspension = runSteps(state, def.steps ?? [], ctx, logs);
       if (suspension) {
@@ -368,6 +376,10 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
   let guard = 0;
   while (queue.length > 0 && guard++ < 64) {
     const { card, owner } = queue.shift()!;
+    // Track own-Toy banishes this turn (Wind-Up Frog cost reduction).
+    if (card.printed.type === "character" && card.printed.subtypes.some((s) => s.toLowerCase() === "toy")) {
+      state.players[owner].ownToyBanishedThisTurn = true;
+    }
     fireTrigger(state, "on_banish", card, owner, logs, effects, true, queue);
     // Controller-wide banish watches (Sid "double prizes", Babyhead, Emerald).
     const ev: EventCtx = { banishedCard: card, banishedOwner: owner };
@@ -491,6 +503,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   for (const pid of [1, 2] as PlayerId[]) {
     state.players[pid].discardedThisTurn = 0;
     state.players[pid].playedThisTurn = [];
+    state.players[pid].ownToyBanishedThisTurn = false;
   }
   state.players[player].extraInk = 0;
   state.endStepDone = false;
@@ -511,6 +524,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     c.justPlayed = false;
     c.questLockedThisTurn = false;
     c.damageShieldedThisTurn = false;
+    c.challengeReadyThisTurn = false;
     const stoneLocked = p.hand.length >= 3 && c.printed.specialAbilities.some((a) => a.slug === "stonebyday");
     if (!stoneLocked) c.exerted = false;
   }
@@ -532,6 +546,16 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     return;
   }
   logs.push(log({ turnNumber: state.turnNumber, player, type: "CARD_DRAWN", message: `${p.name} drew a card` }));
+
+  // Locations passively generate lore at the start of their controller's turn.
+  for (const c of p.field) {
+    if (c.printed.type !== "location") continue;
+    const loc = effectiveLore(state, c);
+    if (loc > 0) {
+      p.lore += loc;
+      logs.push(log({ turnNumber: state.turnNumber, player, type: "LORE_GAINED", message: `${c.printed.fullName} generated ${loc} lore`, data: { lore: p.lore }, cardRefs: [{ id: c.printed.id, name: c.printed.fullName }] }));
+    }
+  }
 
   // Start-of-turn triggers go to the bag (resolved by this player).
   if (effects) {
@@ -857,7 +881,8 @@ export function reduce(
       const defender = dp.field.find((c) => c.instanceId === action.defenderId);
       if (!defender) throw new GameError("Defender is not in play");
       const defenderIsChar = defender.printed.type === "character";
-      if (defenderIsChar && !defender.exerted) throw new GameError("Can only challenge exerted characters");
+      // Cinderella "The Singing Sword" lets the attacker challenge ready characters.
+      if (defenderIsChar && !defender.exerted && !attacker.challengeReadyThisTurn) throw new GameError("Can only challenge exerted characters");
       if (defenderIsChar && hasKeyword(next, defender, "Evasive") && !hasKeyword(next, attacker, "Evasive")) {
         throw new GameError("Only Evasive characters can challenge an Evasive character");
       }

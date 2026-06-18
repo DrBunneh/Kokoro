@@ -87,6 +87,10 @@ export interface Condition {
   banishedSubtype?: string;
   /** (on_other_banished) the banished character was the watcher's own (Babyhead, Emerald). */
   banishedMine?: boolean;
+  /** There's at least one card under the source (Ariel - Ethereal Voice). */
+  selfHasCardUnder?: boolean;
+  /** One of your own Toy characters was banished this turn (Wind-Up Frog). */
+  ownToyBanishedThisTurn?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -174,6 +178,8 @@ export type Step =
   | { do: "ready" | "exert"; to: string }
   // Bar a bound character from questing for the rest of this turn (Lilo - Uproar):
   | { do: "lockQuest"; to: string }
+  // Let a bound character challenge ready characters this turn (Cinderella - Stouthearted):
+  | { do: "grantChallengeReady"; to: string }
   // Add the source's own {S}/{W} to a bound target's strength this turn (Zipper, Support-like):
   | { do: "buffBySourceStat"; to: string; stat: "strength" | "willpower" }
   // Exert every character in scope (Demona):
@@ -224,6 +230,8 @@ export interface EffectDef {
   reduceSubtypeInDiscard?: string;
   /** For trigger "cost": play this card for free when `when` holds (Lilo - Causing an Uproar). */
   free?: boolean;
+  /** Triggered abilities that may only resolve once per turn (Ariel - Ethereal Voice). */
+  oncePerTurn?: boolean;
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
@@ -452,6 +460,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
     case "lockQuest": { const t = resolveTarget(state, ctx, step.to); if (t) t.questLockedThisTurn = true; break; }
+    case "grantChallengeReady": { const t = resolveTarget(state, ctx, step.to); if (t) t.challengeReadyThisTurn = true; break; }
     case "exert": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = true; break; }
     case "exertAll": {
       for (const c of charsInScope(state, ctx.controller, step.scope ?? "any")) c.exerted = true;

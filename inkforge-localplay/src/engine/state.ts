@@ -47,6 +47,8 @@ export interface CardInstance {
   questLockedThisTurn?: boolean;
   /** Used this turn's one-time damage shield (Lilo - Bundled Up "extra layers"). */
   damageShieldedThisTurn?: boolean;
+  /** May challenge ready (unexerted) characters this turn (Cinderella - Stouthearted). */
+  challengeReadyThisTurn?: boolean;
 }
 
 /** A turn-scoped "pay N less for the next matching play" discount. */
@@ -76,6 +78,8 @@ export interface PlayerState {
   discardedThisTurn: number;
   /** Cards this player has played this turn (for "if you played a Princess" gates). */
   playedThisTurn: { type: import("@/data/card-types").CardType; subtypes: string[]; name: string }[];
+  /** One of this player's own Toy characters was banished this turn (Wind-Up Frog). */
+  ownToyBanishedThisTurn?: boolean;
 }
 
 export interface CoinToss {

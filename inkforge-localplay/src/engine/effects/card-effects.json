@@ -1522,5 +1522,23 @@
       { "do": "debuff", "to": "t", "strength": 2, "duration": "end_of_turn" }
     ] }
   ],
+  "commandperformance": [
+    { "trigger": "on_play_song", "oncePerTurn": true, "when": { "selfHasCardUnder": true }, "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "thesingingsword": [
+    { "trigger": "on_play_song", "steps": [{ "do": "grantChallengeReady", "to": "self" }] }
+  ],
+  "addedtraction": [
+    { "trigger": "cost", "reduce": 2, "when": { "ownToyBanishedThisTurn": true } }
+  ],
+  "icantakeit": [
+    { "trigger": "activated", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "text": "move up to 1 damage to this character" },
+      { "do": "moveDamage", "from": "t", "to": "self", "amount": 1 }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }
