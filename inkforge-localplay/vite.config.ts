@@ -17,13 +17,17 @@ export default defineConfig({
         display: "standalone",
         orientation: "any",
         start_url: "/",
-        icons: [],
+        icons: [
+          { src: "/brand/inkforge-icon.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/brand/inkforge-icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/brand/inkforge-icon.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
       },
       workbox: {
         // App shell precache; image runtime caching keyed on the (configurable)
         // image host so a missing/blocked host degrades to placeholders rather
         // than failing the SW install (spec §5.2).
-        globPatterns: ["**/*.{js,css,html,woff2}"],
+        globPatterns: ["**/*.{js,css,html,woff2}", "brand/*.png"],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/[^/]*duels\.ink\/.*\.webp$/,
