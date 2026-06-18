@@ -623,6 +623,43 @@ describe("Effect DSL + the bag", () => {
     expect(g.currentPlayer).toBe(2); // turn advanced (no prompt needed)
   });
 
+  it("self-cost reduction lowers a card's own cost (About Time)", () => {
+    const effects: CardEffects = { abouttime: [{ trigger: "cost", reducePer: "actionInDiscard" }] };
+    const lookup: CardLookup = (id) => printed(id, { type: "character", cost: 5, willpower: 3, specialAbilities: [{ name: "About Time", slug: "abouttime", effect: "For each action in your discard, pay 1 less." }] });
+    let g = toPlay(lookup);
+    // Two actions in discard → pay 2 less → cost 3.
+    g.players[1].discard.push(
+      { instanceId: "a1", printed: printed("a1", { type: "action" }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+      { instanceId: "a2", printed: printed("a2", { type: "action" }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+    );
+    g.players[1].inkwell = Array.from({ length: 5 }, (_, j) => ({ instanceId: `ink${j}`, printed: printed(`ink${j}`), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] }));
+    const cardId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: cardId }, effects).state;
+    expect(g.players[1].inkwell.filter((c) => !c.exerted).length).toBe(2); // 5 - 3 cost
+  });
+
+  it("removeDamageDraw heals and draws per damage removed (Rapunzel)", () => {
+    const effects: CardEffects = { heal: [{ trigger: "on_play", steps: [{ do: "chooseCharacter", as: "t", scope: "ally", optional: true }, { do: "removeDamageDraw", to: "t", amount: 3 }] }] };
+    let g = toPlay(lookupP1Ability("Heal", "heal", "Remove up to 3 damage; draw per damage removed."));
+    const ally = { instanceId: "hurt", printed: printed("hurt", { willpower: 9 }), damage: 2, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].field.push(ally);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    const deckBefore = g.players[1].deck.length;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "hurt" }, effects).state;
+    expect(g.players[1].field.find((c) => c.instanceId === "hurt")!.damage).toBe(0);
+    expect(g.players[1].deck.length).toBe(deckBefore - 2); // drew 2 (damage removed)
+  });
+
+  it("gainLoreByStrength gains lore equal to source strength, capped (Mulan)", () => {
+    const effects: CardEffects = { rt: [{ trigger: "on_quest", steps: [{ do: "gainLoreByStrength", max: 6 }] }] };
+    let g = toPlay((id) => printed(id));
+    // Strength-4 character with Rigorous Training that can quest.
+    g.players[1].field.push({ instanceId: "m", printed: printed("m", { strength: 4, lore: 0, specialAbilities: [{ name: "Rigorous Training", slug: "rt", effect: "Quest: gain lore equal to strength." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    g = reduce(g, { type: "QUEST", cardInstanceId: "m" }, effects).state;
+    expect(g.players[1].lore).toBe(4); // 0 from quest (lore 0) + 4 from strength
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

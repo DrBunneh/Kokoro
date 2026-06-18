@@ -963,5 +963,26 @@
   "poorsouls": [
     { "trigger": "on_challenged", "steps": [{ "do": "opponentDiscard", "amount": 1 }] }
   ],
+  "abouttime": [
+    { "trigger": "cost", "reducePer": "actionInDiscard" }
+  ],
+  "underdog": [
+    { "trigger": "cost", "reduce": 1, "when": { "firstTurnNotFirstPlayer": true } }
+  ],
+  "loyal": [
+    { "trigger": "cost", "reduce": 1, "when": { "haveCharacterNamed": "Gaston" } }
+  ],
+  "heypidge": [
+    { "trigger": "cost", "reduce": 1, "when": { "haveCharacterNamed": "Lady" } }
+  ],
+  "gleamandglow": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "optional": true, "text": "remove up to 3 damage; draw 1 per damage removed" },
+      { "do": "removeDamageDraw", "to": "t", "amount": 3 }
+    ] }
+  ],
+  "rigoroustraining": [
+    { "trigger": "on_quest", "steps": [{ "do": "gainLoreByStrength", "max": 6 }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

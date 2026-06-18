@@ -141,10 +141,29 @@ function matchingDiscounts(p: PlayerState, card: CardInstance["printed"]) {
   );
 }
 
-/** Cost after applicable "pay N less" discounts (never below 0). */
-function effectiveCost(p: PlayerState, card: CardInstance["printed"]): number {
-  const reduction = matchingDiscounts(p, card).reduce((sum, d) => sum + d.amount, 0);
-  return Math.max(0, card.cost - reduction);
+/**
+ * A card's own passive cost reduction ("you pay N less to play this …"), read
+ * from its `cost`-trigger defs (flat, count-based, and/or condition-gated).
+ */
+function selfCostReduction(state: GameState, p: PlayerState, source: CardInstance, effects: CardEffects): number {
+  let total = 0;
+  for (const sa of source.printed.specialAbilities) {
+    for (const def of effects[sa.slug] ?? []) {
+      if (def.trigger !== "cost") continue;
+      if (!conditionMet(state, p === state.players[1] ? 1 : 2, source, def.when)) continue;
+      total += def.reduce ?? 0;
+      if (def.reducePer === "actionInDiscard") total += p.discard.filter((c) => c.printed.type === "action" || c.printed.type === "song").length;
+    }
+  }
+  return total;
+}
+
+/** Cost after "pay N less" discounts + the card's own passive reduction (≥0). */
+function effectiveCost(state: GameState, p: PlayerState, card: CardInstance, effects: CardEffects): number {
+  const reduction =
+    matchingDiscounts(p, card.printed).reduce((sum, d) => sum + d.amount, 0) +
+    selfCostReduction(state, p, card, effects);
+  return Math.max(0, card.printed.cost - reduction);
 }
 
 /** Consume one use of each discount applied to this play; drop depleted ones. */
@@ -232,7 +251,7 @@ function runAbility(
       // A gated effect only fires when its condition holds (else it's skipped).
       if (!conditionMet(state, controller, source, def.when)) continue;
       const ctx: EffectContext = { controller, source, vars: {}, banished };
-      const suspension = runSteps(state, def.steps, ctx, logs);
+      const suspension = runSteps(state, def.steps ?? [], ctx, logs);
       if (suspension) {
         state.pendingPrompts.push({
           id: uid(),
@@ -537,8 +556,8 @@ export function reduce(
         return { state: next, logs };
       }
 
-      // --- Normal play: pay ink (after any "pay N less" discounts) ---
-      const cost = effectiveCost(p, card.printed);
+      // --- Normal play: pay ink (after discounts + the card's own reduction) ---
+      const cost = effectiveCost(next, p, card, effects);
       if (readyInk(p).length < cost) throw new GameError("Not enough ink");
       payInk(p, cost);
       consumeDiscounts(p, card.printed);

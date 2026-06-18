@@ -24,7 +24,8 @@ export type Trigger =
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
-  | "activated";
+  | "activated"
+  | "cost"; // passive self-cost reduction, evaluated when this card is played
 
 export type Scope = "any" | "ally" | "enemy";
 export type Who = "self" | "opponent";
@@ -109,6 +110,10 @@ export type Step =
   // Damage (amount may instead scale with a character count via amountPer):
   | { do: "dealDamage"; to: string; amount?: number; amountPer?: AmountPer }
   | { do: "removeDamage"; to: string; amount: number }
+  // Remove up to `amount` damage from a target, then draw that many cards (Rapunzel):
+  | { do: "removeDamageDraw"; to: string; amount: number }
+  // Gain lore equal to the source's strength, optionally capped (Mulan):
+  | { do: "gainLoreByStrength"; max?: number }
   // Area damage to every character in scope:
   | { do: "dealDamageAll"; scope?: Scope; amount: number }
   // Movement / removal:
@@ -146,9 +151,13 @@ export type Step =
 
 export interface EffectDef {
   trigger: Trigger;
-  steps: Step[];
+  steps?: Step[];
   /** Optional gate: the effect only fires when this condition holds. */
   when?: Condition;
+  /** For trigger "cost": flat ink reduction when playing this card. */
+  reduce?: number;
+  /** For trigger "cost": reduction that scales with a count. */
+  reducePer?: "actionInDiscard";
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
@@ -284,6 +293,20 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     case "removeDamage": {
       const t = resolveTarget(state, ctx, step.to);
       if (t) t.damage = Math.max(0, t.damage - step.amount);
+      break;
+    }
+    case "removeDamageDraw": {
+      const t = resolveTarget(state, ctx, step.to);
+      if (t) {
+        const removed = Math.min(step.amount, t.damage);
+        t.damage -= removed;
+        if (removed > 0) drawCards(state.players[ctx.controller], removed);
+      }
+      break;
+    }
+    case "gainLoreByStrength": {
+      const amt = Math.min(effectiveStrength(ctx.source), step.max ?? Infinity);
+      if (amt > 0) state.players[ctx.controller].lore += amt;
       break;
     }
     case "banish": {
