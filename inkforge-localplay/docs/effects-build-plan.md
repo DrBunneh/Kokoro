@@ -127,3 +127,44 @@ Stat/keyword change that lasts until the start of the caster's next turn.
 Implementation proceeds Wave 1 → 5, JSON + tests committed per wave. Waves 1–4
 reuse the composable DSL; Wave 5 items need new engine zones/structures and are
 scheduled last.
+
+---
+
+## Progress
+
+- **Waves 1–3** built: untilNextTurn duration, banishAll filters, gainLoreEqual,
+  each-player draw, exerted/damaged target filters, scaling/gated statics
+  (perOther/perOtherSubtype/perItem, whileNoHand/whileSelfUndamaged/
+  whileOtherCharsAtLeast/whileControllerHasSubtype, yoursColor, excludeSelf).
+- **Wave 4** built: triggers on_play_cheap, on_challenge_banish; on_banish reuse
+  for "leaves play" (Merlin, Olaf); conditions lastPlayedType/
+  lastPlayedNonCharacter/otherCharsAtLeast.
+- **Wave 5a** built: returnSelfToHand step; combat flags standshisground
+  (can't challenge) and recordtime (quest while drying); conditions
+  opponentHasExerted/haveSubtypeAny/lastPlayedSubtype/onlyYourTurn/
+  onlyOpponentTurn; ~25 more cards wired. Behavioral flag slugs
+  (stonebyday/spikesuit) marked covered.
+
+Running total for this batch: **DONE 184, PARTIAL 25, TODO 49.**
+
+### Still TODO (need structural work — Wave 5b/5c)
+- **Cards-under (Shift stack)**: increasingwisdom, superhumanstrength,
+  illtakethat, countingcoins, goodbusiness, forebodingglance, commandperformance,
+  itsloadsoffun. (Shift must tuck the shifted-over card; expose cardsUnder.)
+- **Locations zone + "while here" / "move here"**: The Library, Casa Madrigal,
+  Seven Dwarfs' Mine, Scrooge's Counting House.
+- **Play-a-card-for-free / alternate cost**: someonetocarefor, letsgohome,
+  whatamess, springloaded, stompintime, raaawr (needs can't-quest flag),
+  letsgetmovin, splenderifficbounce.
+- **Can't-be-damaged / damage-prevent / stat-floor**: evervigilant, evervaliant,
+  extralayers, foreverstrong.
+- **Conditional self cost-reduction (when + flat reduce)**: letsride, addedtraction,
+  rejectedtoys, nextstopolympus.
+- **High-frequency event triggers**: on_draw (heavilyarmed, circlefarandwide),
+  opponent-discard watch (isentenceyou), inkwell-added (brilliantshine),
+  song-resing (whatadeal), controller-wide on_challenged (specialreservation,
+  fierceprotection), action-damage (steadyaim), play-item (lookingforthis).
+- **Misc multi-step**: whatdyasay, icantakeit, worksmarter, keytothepuzzle,
+  buzzingenthusiasm, royallybigrewards, dusktodawn, keepinstep, flexiblethinking,
+  weirdthingsarehappening, mountaindefense, playtimesover, timetomove, repurposed,
+  fullquiver, healinghome, ancestrallegacy, thesingingsword, bigprize.

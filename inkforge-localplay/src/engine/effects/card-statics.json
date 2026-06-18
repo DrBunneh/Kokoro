@@ -16,5 +16,9 @@
   "begrateful": [{ "scope": "yoursSubtype", "subtype": "Ally", "strength": 1 }],
   "everyonegatherround": [{ "scope": "yoursSubtype", "subtype": "Toy", "willpower": 1, "excludeSelf": true }],
   "airsupport": [{ "scope": "yours", "keyword": "Support" }],
+  "stonebyday": [],
+  "standshisground": [],
+  "recordtime": [],
+  "spikesuit": [],
   "$schema": "slug -> StaticDef[] (continuous modifiers). slugs use build-card-db slugify."
 }

@@ -239,6 +239,20 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
       (!want || c.printed.subtypes.some((s) => s.toLowerCase() === want))).length;
     if (n < when.otherCharsAtLeast) return false;
   }
+  if (when.opponentHasExerted) {
+    const opp = state.players[otherPlayer(controller)];
+    if (!opp.field.some((c) => c.printed.type === "character" && c.exerted)) return false;
+  }
+  if (when.haveSubtypeAny) {
+    const wants = when.haveSubtypeAny.map((s) => s.toLowerCase());
+    if (!p.field.some((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => wants.includes(s.toLowerCase())))) return false;
+  }
+  if (when.lastPlayedSubtype) {
+    const want = when.lastPlayedSubtype.toLowerCase();
+    if (!last || !last.subtypes.some((s) => s.toLowerCase() === want)) return false;
+  }
+  if (when.onlyYourTurn && state.currentPlayer !== controller) return false;
+  if (when.onlyOpponentTurn && state.currentPlayer === controller) return false;
   return true;
 }
 
@@ -640,7 +654,9 @@ export function reduce(
       if (!card) throw new GameError("Character not in play");
       if (card.printed.type !== "character") throw new GameError("Only characters can quest");
       if (card.exerted) throw new GameError("Character is exerted");
-      if (card.justPlayed) throw new GameError("Character is drying (played this turn)");
+      // Dash "Record Time" may quest the turn he's played (ignores drying).
+      const questAnyTime = card.printed.specialAbilities.some((a) => a.slug === "recordtime");
+      if (card.justPlayed && !questAnyTime) throw new GameError("Character is drying (played this turn)");
       card.exerted = true;
       const gained = effectiveLore(next, card);
       p.lore += gained;
@@ -724,6 +740,7 @@ export function reduce(
       const attacker = ap.field.find((c) => c.instanceId === action.attackerId);
       if (!attacker || attacker.printed.type !== "character") throw new GameError("Attacker is not a character in play");
       if (attacker.exerted) throw new GameError("Attacker is exerted");
+      if (attacker.printed.specialAbilities.some((a) => a.slug === "standshisground")) throw new GameError("This character can't challenge");
       if (attacker.justPlayed && !hasKeyword(next, attacker, "Rush")) throw new GameError("Attacker is drying");
 
       const defender = dp.field.find((c) => c.instanceId === action.defenderId);

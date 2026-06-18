@@ -58,6 +58,16 @@ export interface Condition {
   /** You have at least N *other* characters in play (optionally of `otherSubtype`). */
   otherCharsAtLeast?: number;
   otherSubtype?: string;
+  /** An opponent has an exerted character in play (Honeymaren). */
+  opponentHasExerted?: boolean;
+  /** You control a character of one of these subtypes (Sleepy, Julieta's Arepas). */
+  haveSubtypeAny?: string[];
+  /** The most-recently-played character this turn has this subtype (Pluto - Steel). */
+  lastPlayedSubtype?: string;
+  /** It's currently the controller's own turn (Pterodactyl). */
+  onlyYourTurn?: boolean;
+  /** It's currently an opponent's turn (Rex). */
+  onlyOpponentTurn?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -169,6 +179,8 @@ export type Step =
   | { do: "discardChoose"; amount?: number; amountPer?: AmountPer; text?: string }
   // Play the source card from your discard into play (Lilo - Escape Artist):
   | { do: "playFromDiscard"; exerted?: boolean }
+  // Return the source card from your discard to your hand (Will o' the Wisp / Snow White):
+  | { do: "returnSelfToHand" }
   | { do: "discard"; player?: Who; amount?: number }
   | { do: "gainLore" | "loseLore"; player?: Who; amount?: number };
 
@@ -596,6 +608,18 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         src.damage = 0; src.exerted = step.exerted ?? false; src.justPlayed = true; src.appliedEffects = [];
         p.field.push(src);
         logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_PLAYED", message: `Played ${src.printed.fullName} from discard`, cardRefs: [{ id: src.printed.id, name: src.printed.fullName }] }));
+      }
+      break;
+    }
+    case "returnSelfToHand": {
+      const src = ctx.source;
+      const p = state.players[ctx.controller];
+      const i = p.discard.indexOf(src);
+      if (i >= 0) {
+        p.discard.splice(i, 1);
+        src.damage = 0; src.exerted = false; src.justPlayed = false; src.appliedEffects = [];
+        p.hand.push(src);
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_PUT_INTO_INKWELL", message: `Returned ${src.printed.fullName} to hand`, cardRefs: [{ id: src.printed.id, name: src.printed.fullName }] }));
       }
       break;
     }
