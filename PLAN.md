@@ -7,6 +7,17 @@ criteria, and the environment-specific decisions agreed during spec review.
 
 ---
 
+## Build status (live)
+
+| Phase | State |
+|---|---|
+| **P0** Foundations + Mulligan | ✅ Complete (shell, card DB, image cache, decks/builder/decklists, Mulligan w/ animation) |
+| **P1** Hot-seat duel + T2 engine | ✅ Core complete — setup, turns, ink/play/quest/challenge, combat keywords (Evasive/Bodyguard/Rush/Resist/Challenger/Support), the bag, Effect DSL + Manual Mode, undo/redo, playable hot-seat board. ◻ Remaining: Shift stacks, Singer/Sing Together, Reckless constraint, static abilities, broader card-effects seed |
+| **P2** Android APK + offline | ✅ Capacitor APK via CI on every push + OTA update button. ◻ Remaining: native Filesystem image cache + Preferences mirror, formal airplane-mode acceptance |
+| **P3** PvP + replays + stats | ✅ Replays (record/list/playback) + Stats (OTP/OTD) + duels.ink importer + WebRTC/QR pairing + host-authoritative sync (sync logic unit-tested over loopback). ⚠ WebRTC **unverified on-device** (needs two devices); ◻ Remaining: bag/Manual-Mode UI in the networked board, undo negotiation, reconnect |
+
+**~74 tests green; APK + OTA bundle rebuilt on every push.** Hard blocker reached: WebRTC PvP can only be validated on two physical devices.
+
 ## 0. Decisions locked during spec review
 
 | # | Question | Decision |
