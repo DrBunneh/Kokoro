@@ -10,7 +10,7 @@ import { HotSeatScreen } from "@/ui/screens/HotSeatScreen";
 import { StatsScreen } from "@/ui/screens/StatsScreen";
 import { ReplaysScreen } from "@/ui/screens/ReplaysScreen";
 import { PlaybackScreen } from "@/ui/screens/PlaybackScreen";
-import { LocalPlayScreen } from "@/ui/screens/stubs";
+import { LocalPlayScreen } from "@/ui/screens/LocalPlayScreen";
 
 /**
  * Screen inventory per spec §11. Screens later than P0 are stubbed but routable

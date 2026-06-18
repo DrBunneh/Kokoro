@@ -5,13 +5,15 @@
  */
 import type { Action } from "@/engine/actions";
 import type { Frame, LogEntry } from "@/engine/replay";
+import type { GameState } from "@/engine/state";
 
 export type Role = "host" | "follower";
 export type ConnStatus = "connecting" | "connected" | "closed";
 
 /** Wire messages exchanged between peers (spec §8.3). */
 export type NetMsg =
-  | { t: "HELLO"; name: string; deckHash: string; deck: string[]; seed?: string; firstPlayer?: 1 | 2 }
+  | { t: "HELLO"; name: string; deck: string[] }
+  | { t: "INIT"; baseSnapshot: GameState }
   | { t: "ACTION"; action: Action }
   | { t: "FRAMES"; frames: Frame[]; logs: LogEntry[] }
   | { t: "UNDO_REQUEST" }
