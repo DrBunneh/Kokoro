@@ -5,6 +5,24 @@
  */
 import Dexie, { type EntityTable } from "dexie";
 import type { Deck } from "@/data/deck-types";
+import type { GameState, PlayerId } from "@/engine/state";
+import type { Replay } from "@/engine/replay";
+
+/** A completed game, stored for Replays (spec §10.1) and Stats (§10.2). */
+export interface StoredReplay {
+  id: string;
+  createdAt: number;
+  playerNames: Record<PlayerId, string>;
+  deck1Id: string;
+  deck2Id: string;
+  deck1Colors: string[];
+  deck2Colors: string[];
+  firstPlayer: PlayerId | null;
+  winner: PlayerId | null;
+  victoryReason?: string;
+  turnCount: number;
+  replay: Replay<GameState>;
+}
 
 /** One recorded Mulligan decision (feeds Stats §10.2: keep rates OTP/OTD). */
 export interface MulliganResult {
@@ -21,6 +39,7 @@ export interface MulliganResult {
 export class LocalPlayDB extends Dexie {
   decks!: EntityTable<Deck, "id">;
   mulliganResults!: EntityTable<MulliganResult, "id">;
+  replays!: EntityTable<StoredReplay, "id">;
 
   constructor() {
     super("inkforge-localplay");
@@ -31,6 +50,11 @@ export class LocalPlayDB extends Dexie {
     this.version(2).stores({
       decks: "id, name, isDefault, updatedAt",
       mulliganResults: "++id, deckId, onThePlay, timestamp",
+    });
+    this.version(3).stores({
+      decks: "id, name, isDefault, updatedAt",
+      mulliganResults: "++id, deckId, onThePlay, timestamp",
+      replays: "id, createdAt, deck1Id, deck2Id",
     });
   }
 }

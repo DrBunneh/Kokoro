@@ -7,7 +7,10 @@ import { DecklistsScreen } from "@/ui/screens/DecklistsScreen";
 import { MulliganScreen } from "@/ui/screens/MulliganScreen";
 import { PlayMenuScreen } from "@/ui/screens/PlayMenuScreen";
 import { HotSeatScreen } from "@/ui/screens/HotSeatScreen";
-import { LocalPlayScreen, StatsScreen, ReplaysScreen } from "@/ui/screens/stubs";
+import { StatsScreen } from "@/ui/screens/StatsScreen";
+import { ReplaysScreen } from "@/ui/screens/ReplaysScreen";
+import { PlaybackScreen } from "@/ui/screens/PlaybackScreen";
+import { LocalPlayScreen } from "@/ui/screens/stubs";
 
 /**
  * Screen inventory per spec §11. Screens later than P0 are stubbed but routable
@@ -28,6 +31,7 @@ export const router = createBrowserRouter([
       { path: "play/local", element: <LocalPlayScreen /> },
       { path: "stats", element: <StatsScreen /> },
       { path: "replays", element: <ReplaysScreen /> },
+      { path: "replays/:replayId", element: <PlaybackScreen /> },
     ],
   },
 ]);

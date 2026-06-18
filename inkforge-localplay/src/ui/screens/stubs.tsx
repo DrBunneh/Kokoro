@@ -13,6 +13,4 @@ function Stub({ title, phase }: { title: string; phase: string }) {
   );
 }
 
-export const LocalPlayScreen = () => <Stub title="Local Play" phase="P3" />;
-export const StatsScreen = () => <Stub title="Stats" phase="P3 · WP3.6" />;
-export const ReplaysScreen = () => <Stub title="Replays" phase="P3 · WP3.5" />;
+export const LocalPlayScreen = () => <Stub title="Local Play" phase="P3 (WebRTC PvP)" />;
