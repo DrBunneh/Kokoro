@@ -125,6 +125,8 @@ export interface Condition {
   haveCharWillpowerAtLeast?: number;
   /** An opponent has more characters in play than you (When You Need Help, Just Call). */
   opponentMoreCharacters?: boolean;
+  /** An opposing character was banished in a challenge this turn (Card Advantage). */
+  enemyBanishedInChallengeThisTurn?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -224,6 +226,8 @@ export type Step =
   | { do: "lockQuest"; to: string }
   // Let a bound character challenge ready characters this turn (Cinderella - Stouthearted):
   | { do: "grantChallengeReady"; to: string }
+  // Apply a "next turn" restriction to a bound character (Syndrome's Remote, Hamish):
+  | { do: "applyStatus"; to: string; status: "cantChallengeNextTurn" | "cantReadyNextTurn" }
   // Add the source's own {S}/{W} to a bound target's strength this turn (Zipper, Support-like):
   | { do: "buffBySourceStat"; to: string; stat: "strength" | "willpower" }
   // Exert every character in scope (Demona):
@@ -236,9 +240,11 @@ export type Step =
   | { do: "putToInkwell"; to: string; exerted?: boolean } // into its owner's inkwell
   | { do: "toBottom"; to: string }                         // to the bottom of its owner's deck
   // Choose an item in play (suspends), then act on it (banish):
-  | { do: "chooseItem"; as: string; scope?: Scope; text?: string; optional?: boolean }
+  | { do: "chooseItem"; as: string; scope?: Scope; maxCost?: number; text?: string; optional?: boolean }
   // Return card(s) from your discard to hand (suspends on a discard picker):
-  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; subtype?: string; keepUpTo?: number; to?: "hand" | "bottom" | "inkwellExerted" | "top"; optional?: boolean; text?: string }
+  | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; minWillpower?: number; cardName?: string; subtype?: string; keepUpTo?: number; to?: "hand" | "bottom" | "inkwellExerted" | "top"; optional?: boolean; text?: string }
+  // Shuffle all character cards from discard(s) back into deck(s) (DunBroch Tapestry):
+  | { do: "shuffleDiscardIntoDeck"; player?: Who | "each"; cardType?: CardType }
   // Draw cards equal to a bound character's strength (Scar - Finally King):
   | { do: "drawByStat"; from: string; stat: "strength" | "willpower" }
   // The player whose turn is ending discards down to `size` cards (Goliath):
@@ -559,6 +565,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
     case "lockQuest": { const t = resolveTarget(state, ctx, step.to); if (t) t.questLockedThisTurn = true; break; }
     case "grantChallengeReady": { const t = resolveTarget(state, ctx, step.to); if (t) t.challengeReadyThisTurn = true; break; }
+    case "applyStatus": { const t = resolveTarget(state, ctx, step.to); if (t) t[step.status] = true; break; }
     case "exert": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = true; break; }
     case "exertAll": {
       for (const c of charsInScope(state, ctx.controller, step.scope ?? "any")) c.exerted = true;
@@ -814,6 +821,19 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "shuffleDiscardIntoDeck": {
+      const targets: PlayerId[] = step.player === "each" ? [1, 2] : [player(ctx, step.player)];
+      const rng = new Rng(state.rngSeed, state.rngCursor);
+      for (const pid of targets) {
+        const pl = state.players[pid];
+        const move = pl.discard.filter((c) => !step.cardType || c.printed.type === step.cardType);
+        pl.discard = pl.discard.filter((c) => step.cardType && c.printed.type !== step.cardType);
+        for (const c of move) { c.damage = 0; c.exerted = false; c.justPlayed = false; c.appliedEffects = []; }
+        pl.deck = rng.shuffle([...pl.deck, ...move]);
+      }
+      state.rngCursor = rng.cursor;
+      break;
+    }
     case "mill": {
       const p = state.players[player(ctx, step.player)];
       for (let k = 0; k < step.amount; k++) {
@@ -976,7 +996,7 @@ export function runSteps(
     }
     if (step.do === "returnFromDiscard") {
       const p = state.players[ctx.controller];
-      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (step.maxCost == null || c.printed.cost <= step.maxCost) && (!step.cardName || c.printed.name.toLowerCase() === step.cardName.toLowerCase() || c.printed.fullName.toLowerCase() === step.cardName.toLowerCase()) && (!step.subtype || c.printed.subtypes.some((s) => s.toLowerCase() === step.subtype!.toLowerCase()));
+      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (step.maxCost == null || c.printed.cost <= step.maxCost) && (step.minWillpower == null || (c.printed.willpower ?? 0) >= step.minWillpower) && (!step.cardName || c.printed.name.toLowerCase() === step.cardName.toLowerCase() || c.printed.fullName.toLowerCase() === step.cardName.toLowerCase()) && (!step.subtype || c.printed.subtypes.some((s) => s.toLowerCase() === step.subtype!.toLowerCase()));
       const keepUpTo = step.keepUpTo ?? 1;
       const nsK = "__rfdKept";
       if (pending != null) {

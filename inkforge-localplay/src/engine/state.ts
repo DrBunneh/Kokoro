@@ -51,6 +51,10 @@ export interface CardInstance {
   challengeReadyThisTurn?: boolean;
   /** The location (instanceId) this character is currently at, if any. */
   atLocation?: string;
+  /** Can't challenge during its controller's next turn (cleared at their turn end). */
+  cantChallengeNextTurn?: boolean;
+  /** Can't ready at the start of its controller's next turn (cleared when skipped). */
+  cantReadyNextTurn?: boolean;
 }
 
 /** A turn-scoped "pay N less for the next matching play" discount. */
@@ -84,6 +88,8 @@ export interface PlayerState {
   ownToyBanishedThisTurn?: boolean;
   /** This player removed damage from a character this turn (Julieta's Arepas). */
   removedDamageThisTurn?: boolean;
+  /** An opposing character was banished in a challenge this turn (Card Advantage). */
+  enemyBanishedInChallengeThisTurn?: boolean;
 }
 
 export interface CoinToss {

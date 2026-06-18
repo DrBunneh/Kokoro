@@ -300,6 +300,7 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
     const theirs = state.players[otherPlayer(controller)].field.filter((c) => c.printed.type === "character").length;
     if (theirs <= mine) return false;
   }
+  if (when.enemyBanishedInChallengeThisTurn && !p.enemyBanishedInChallengeThisTurn) return false;
   return true;
 }
 
@@ -644,6 +645,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     state.players[pid].playedThisTurn = [];
     state.players[pid].ownToyBanishedThisTurn = false;
     state.players[pid].removedDamageThisTurn = false;
+    state.players[pid].enemyBanishedInChallengeThisTurn = false;
   }
   state.players[player].extraInk = 0;
   state.endStepDone = false;
@@ -666,7 +668,10 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     c.damageShieldedThisTurn = false;
     c.challengeReadyThisTurn = false;
     const stoneLocked = p.hand.length >= 3 && c.printed.specialAbilities.some((a) => a.slug === "stonebyday");
-    if (!stoneLocked) c.exerted = false;
+    // "Rooted by Fear" (Mor'du): your other characters can't ready at the start of your turn.
+    const rootLocked = c.printed.name.toLowerCase() !== "mor'du" && p.field.some((g) => g.printed.specialAbilities.some((a) => a.slug === "rootedbyfear"));
+    if (c.cantReadyNextTurn) { c.cantReadyNextTurn = false; continue; } // skip readying once, then clear
+    if (!stoneLocked && !rootLocked) c.exerted = false;
   }
   logs.push(log({ turnNumber: state.turnNumber, player, type: "TURN_START", message: `${p.name}'s turn` }));
   logs.push(log({ turnNumber: state.turnNumber, player, type: "READY", message: "Ready step" }));
@@ -1010,7 +1015,11 @@ export function reduce(
       if (!mover || mover.printed.type !== "character") throw new GameError("Not a character in play");
       if (!location || location.printed.type !== "location") throw new GameError("Not a location in play");
       if (mover.atLocation === location.instanceId) throw new GameError("Already at that location");
-      const moveCost = location.printed.moveCost ?? 0;
+      const locSlugs = location.printed.specialAbilities.map((a) => a.slug);
+      const isToy = mover.printed.subtypes.some((s) => s.toLowerCase() === "toy");
+      // Free-move grants: Pizza Planet (your Toys) / Ring of Stones (your exerted).
+      const freeMove = (isToy && locSlugs.includes("youarecleartoenter")) || (mover.exerted && locSlugs.includes("followyourfate"));
+      const moveCost = freeMove ? 0 : (location.printed.moveCost ?? 0);
       if (readyInk(p).length < moveCost) throw new GameError("Not enough ink to move");
       payInk(p, moveCost);
       const firstHere = !p.field.some((c) => c.printed.type === "character" && c.atLocation === location.instanceId);
@@ -1108,6 +1117,7 @@ export function reduce(
       if (!attacker || attacker.printed.type !== "character") throw new GameError("Attacker is not a character in play");
       if (attacker.exerted) throw new GameError("Attacker is exerted");
       if (attacker.printed.specialAbilities.some((a) => a.slug === "standshisground")) throw new GameError("This character can't challenge");
+      if (attacker.cantChallengeNextTurn) throw new GameError("This character can't challenge this turn");
       if (attacker.justPlayed && !hasKeyword(next, attacker, "Rush")) throw new GameError("Attacker is drying");
       // RC "Low Batteries": pay 1 {I} each time it challenges.
       if (attacker.printed.specialAbilities.some((a) => a.slug === "lowbatteries")) {
@@ -1165,8 +1175,8 @@ export function reduce(
       // Banish anything that took lethal damage (simultaneous).
       const defenderDies = defenderIsChar && isBanished(next, defender);
       const attackerDies = isBanished(next, attacker);
-      if (defenderDies) { banishCard(dp, defender, logs, next.turnNumber); banished.push({ card: defender, owner: otherPlayer(next.currentPlayer) }); }
-      if (attackerDies) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); }
+      if (defenderDies) { banishCard(dp, defender, logs, next.turnNumber); banished.push({ card: defender, owner: otherPlayer(next.currentPlayer) }); next.players[next.currentPlayer].enemyBanishedInChallengeThisTurn = true; }
+      if (attackerDies) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); next.players[otherPlayer(next.currentPlayer)].enemyBanishedInChallengeThisTurn = true; }
       // "Whenever this character banishes another character in a challenge" — only
       // if the attacker survived to do the banishing (Calhoun, Robin, Tinker Bell).
       if (defenderDies && !attackerDies) {
@@ -1254,7 +1264,8 @@ export function reduce(
               const loc = findInstance(next, action.targetInstanceId);
               const scope = lead.scope ?? "any";
               const okScope = !loc ? false : scope === "ally" ? loc.owner === prompt.controller : scope === "enemy" ? loc.owner !== prompt.controller : true;
-              if (!loc || loc.card.printed.type !== "item" || !okScope) throw new GameError("Not a valid item");
+              const okCost = lead.maxCost == null || (loc != null && loc.card.printed.cost <= lead.maxCost);
+              if (!loc || loc.card.printed.type !== "item" || !okScope || !okCost) throw new GameError("Not a valid item");
               inject = action.targetInstanceId;
             } else if (lead.optional) {
               steps = steps.slice(1);
@@ -1354,6 +1365,8 @@ export function reduce(
           c.appliedEffects = c.appliedEffects.filter((e) => e.duration !== "end_of_turn");
         }
       }
+      // "Can't challenge during their next turn" clears at the end of that turn.
+      for (const c of next.players[ending].field) c.cantChallengeNextTurn = false;
       // Freshly-inked cards flip to face-down at the end of the turn they were played.
       for (const c of next.players[ending].inkwell) c.justPlayed = false;
       // "Pay N less this turn" discounts expire at end of turn.
