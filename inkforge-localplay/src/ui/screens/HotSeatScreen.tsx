@@ -318,7 +318,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         cards={meP.hand}
         field={meP.field}
         selectedId={selHand}
-        canInk={!state.hasInkedThisTurn}
+        canInk={!state.hasInkedThisTurn || meP.extraInk > 0}
         ink={ink}
         onCardTap={(c) => setSelHand((id) => (id === c.instanceId ? null : c.instanceId))}
         onInk={(c) => { dispatch({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSelHand(null); }}
@@ -373,21 +373,36 @@ function PromptBar({
           <p className="text-amber-50">{prompt.text}</p>
         </div>
       </div>
-      {prompt.pick === "deck" ? (
+      {prompt.pick === "deck" || prompt.pick === "discard" ? (
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <p className="text-amber-200">Tap a card to keep it in your hand:</p>
+            <p className="text-amber-200">{prompt.pick === "discard" ? "Tap a card from your discard to return:" : "Tap a card to keep it in your hand:"}</p>
             <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">Done</button>
           </div>
           <div className="flex gap-1 overflow-x-auto">
             {(prompt.reveal ?? []).map((id) => {
-              const c = state.players[prompt.player].deck.find((x) => x.instanceId === id);
+              const zone = prompt.pick === "discard" ? state.players[prompt.player].discard : state.players[prompt.player].deck;
+              const c = zone.find((x) => x.instanceId === id);
               return c ? (
                 <button key={id} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: id })} className="w-16 shrink-0 rounded ring-1 ring-white/10 active:ring-2 active:ring-ink-sapphire">
                   <CardThumb card={c.printed} />
                 </button>
               ) : null;
             })}
+          </div>
+        </div>
+      ) : prompt.pick === "item" ? (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <p className="text-amber-200">Tap an item:</p>
+            <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">Skip</button>
+          </div>
+          <div className="flex gap-1 overflow-x-auto">
+            {[...state.players[1].items, ...state.players[2].items].map((c) => (
+              <button key={c.instanceId} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId })} className="w-16 shrink-0 rounded ring-1 ring-white/10 active:ring-2 active:ring-ink-sapphire">
+                <CardThumb card={c.printed} />
+              </button>
+            ))}
           </div>
         </div>
       ) : prompt.pick === "hand" ? (

@@ -82,7 +82,7 @@ function buildDeck(lookup: CardLookup, ids: string[], player: PlayerId): CardIns
 }
 
 function emptyPlayer(name: string, deck: CardInstance[]): PlayerState {
-  return { name, hand: [], field: [], items: [], inkwell: [], discard: [], deck, lore: 0, discounts: [] };
+  return { name, hand: [], field: [], items: [], inkwell: [], discard: [], deck, lore: 0, discounts: [], extraInk: 0 };
 }
 
 /**
@@ -297,6 +297,9 @@ function parseActivationCost(effect: string): { exert: boolean; ink: number; ban
 function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeningTurn: boolean): void {
   state.currentPlayer = player;
   state.hasInkedThisTurn = false;
+  state.players[player].extraInk = 0;
+  // A lockout ("opponents can't play …") expires when its caster's turn begins.
+  if (state.lockout && state.lockout.caster === player) delete state.lockout;
   const p = state.players[player];
 
   // Ready step: ready all cards, clear drying.
@@ -400,8 +403,10 @@ export function reduce(
 
     case "ADD_TO_INK": {
       if (next.status !== "playing") throw new GameError("Not in play");
-      if (next.hasInkedThisTurn) throw new GameError("Already inked this turn");
-      const p = next.players[next.currentPlayer];
+      const inkP = next.players[next.currentPlayer];
+      // One ink per turn, plus any granted extra inkings (Sail the Azurite Sea).
+      if (next.hasInkedThisTurn && inkP.extraInk <= 0) throw new GameError("Already inked this turn");
+      const p = inkP;
       const idx = p.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
       if (idx < 0) throw new GameError("Card not in hand");
       const card = p.hand[idx]!;
@@ -410,7 +415,8 @@ export function reduce(
       card.exerted = false;
       card.justPlayed = true; // shown face-up in the inkwell until end of this turn
       p.inkwell.push(card);
-      next.hasInkedThisTurn = true;
+      if (!next.hasInkedThisTurn) next.hasInkedThisTurn = true;
+      else p.extraInk -= 1;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PUT_INTO_INKWELL", message: `${p.name} inked ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       return { state: next, logs };
     }
@@ -421,6 +427,12 @@ export function reduce(
       const idx = p.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
       if (idx < 0) throw new GameError("Card not in hand");
       const card = p.hand[idx]!;
+
+      // Lockout: opponents can't play actions (or items) until the caster's next turn.
+      if (next.lockout && next.lockout.caster !== next.currentPlayer) {
+        if (card.printed.type === "action" || card.printed.type === "song") throw new GameError("You can't play actions right now");
+        if (next.lockout.items && card.printed.type === "item") throw new GameError("You can't play items right now");
+      }
 
       // --- Shift: play onto a same-name character for the Shift cost (§10.8) ---
       if (action.shiftOnto) {
@@ -651,6 +663,28 @@ export function reduce(
               // force-keep the first legal card so a mandatory scry can't stall.
               const mustKeep = !(lead.optional ?? false) && kept === 0 && legal.length > 0;
               inject = mustKeep ? legal[0]!.instanceId : "__scrystop__";
+            }
+          } else if (lead && lead.do === "returnFromDiscard") {
+            const dpile = next.players[prompt.controller].discard;
+            const kept = parseInt(prompt.resume.vars["__rfdKept"] ?? "0", 10);
+            const legal = dpile.filter((c) => !lead.cardType || c.printed.type === lead.cardType);
+            if (action.targetInstanceId != null) {
+              if (!legal.some((c) => c.instanceId === action.targetInstanceId)) throw new GameError("Not a valid card to return");
+              inject = action.targetInstanceId;
+            } else {
+              const mustKeep = !(lead.optional ?? false) && kept === 0 && legal.length > 0;
+              inject = mustKeep ? legal[0]!.instanceId : "__rfdstop__";
+            }
+          } else if (lead && lead.do === "chooseItem") {
+            if (action.targetInstanceId != null) {
+              const loc = findInstance(next, action.targetInstanceId);
+              const scope = lead.scope ?? "any";
+              const okScope = !loc ? false : scope === "ally" ? loc.owner === prompt.controller : scope === "enemy" ? loc.owner !== prompt.controller : true;
+              if (!loc || loc.card.printed.type !== "item" || !okScope) throw new GameError("Not a valid item");
+              inject = action.targetInstanceId;
+            } else if (lead.optional) {
+              steps = steps.slice(1);
+              inject = undefined;
             }
           } else if (lead && (lead.do === "chooseCharacter" || lead.do === "chooseFromHand")) {
             if (action.targetInstanceId != null) {

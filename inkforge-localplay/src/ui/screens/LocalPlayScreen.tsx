@@ -400,7 +400,7 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
               ><CardThumb card={c.printed} /></button>
               {sel === c.instanceId && myTurn && !prompt && (
                 <div className="mt-0.5 flex flex-wrap gap-0.5">
-                  <button disabled={s.hasInkedThisTurn || !c.printed.inkable} onClick={() => { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-white/10 text-[10px] disabled:opacity-30">Ink</button>
+                  <button disabled={(s.hasInkedThisTurn && me.extraInk <= 0) || !c.printed.inkable} onClick={() => { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-white/10 text-[10px] disabled:opacity-30">Ink</button>
                   <button disabled={readyInk < c.printed.cost} onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-ink-sapphire text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
                   {shiftBase && readyInk >= shiftCost && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: shiftBase.instanceId }); setSel(null); }} className="flex-1 rounded bg-ink-amethyst/70 text-[10px] text-white">Shift {shiftCost}</button>}
                   {singers.length > 0 && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, singers }); setSel(null); }} className="flex-1 rounded bg-ink-emerald/70 text-[10px] text-white">Sing</button>}
@@ -477,21 +477,36 @@ function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel 
     <div className="space-y-2 rounded-lg bg-amber-500/15 p-2 text-xs">
       <p className="font-semibold text-amber-100">Resolve ability:</p>
       {head}
-      {prompt.pick === "deck" ? (
+      {prompt.pick === "deck" || prompt.pick === "discard" ? (
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <p className="text-amber-200">Tap a card to keep it in your hand:</p>
+            <p className="text-amber-200">{prompt.pick === "discard" ? "Tap a card from your discard to return:" : "Tap a card to keep it in your hand:"}</p>
             <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">Done</button>
           </div>
           <div className="flex gap-1 overflow-x-auto">
             {(prompt.reveal ?? []).map((id) => {
-              const c = state.players[prompt.player].deck.find((x) => x.instanceId === id);
+              const zone = prompt.pick === "discard" ? state.players[prompt.player].discard : state.players[prompt.player].deck;
+              const c = zone.find((x) => x.instanceId === id);
               return c ? (
                 <button key={id} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: id })} className="w-14 shrink-0 rounded ring-1 ring-white/10 active:ring-2 active:ring-ink-sapphire">
                   <CardThumb card={c.printed} />
                 </button>
               ) : null;
             })}
+          </div>
+        </div>
+      ) : prompt.pick === "item" ? (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <p className="text-amber-200">Tap an item:</p>
+            <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">Skip</button>
+          </div>
+          <div className="flex gap-1 overflow-x-auto">
+            {[...state.players[1].items, ...state.players[2].items].map((c) => (
+              <button key={c.instanceId} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId })} className="w-14 shrink-0 rounded ring-1 ring-white/10 active:ring-2 active:ring-ink-sapphire">
+                <CardThumb card={c.printed} />
+              </button>
+            ))}
           </div>
         </div>
       ) : prompt.pick === "hand" ? (

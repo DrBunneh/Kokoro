@@ -20,6 +20,10 @@ export interface AppliedEffect {
   strength?: number;
   willpower?: number;
   lore?: number;
+  /** A keyword granted for the duration (e.g. "Challenger", "Rush", "Evasive"). */
+  keyword?: string;
+  /** Numeric value for a stacking granted keyword (e.g. Challenger +3). */
+  keywordValue?: number;
   /** When the effect expires. */
   duration: "end_of_turn" | "permanent";
 }
@@ -60,6 +64,8 @@ export interface PlayerState {
   lore: number;
   /** Pending "pay N less" discounts, cleared at end of turn. */
   discounts: Discount[];
+  /** Extra inkings allowed this turn beyond the normal one (reset each turn). */
+  extraInk: number;
 }
 
 export interface CoinToss {
@@ -89,9 +95,9 @@ export interface Prompt {
   resume?: { steps: Step[]; vars: Record<string, string> };
   /** Allowed target scope for the pending choice (UI hint). */
   scope?: Scope;
-  /** What the resolver picks: a board character, a hand card, a Yes/No, or a revealed deck card. */
-  pick?: "character" | "hand" | "confirm" | "deck";
-  /** For pick === "deck": the revealed card instanceIds to show face-up. */
+  /** What the resolver picks. */
+  pick?: "character" | "hand" | "confirm" | "deck" | "item" | "discard";
+  /** For pick === "deck"/"discard": the revealed card instanceIds to show face-up. */
   reveal?: string[];
   /** For pick === "hand": whose hand to choose from (self or an opponent's). */
   handOwner?: PlayerId;
@@ -113,6 +119,8 @@ export interface GameState {
   victoryReason?: VictoryReason;
   rngSeed: string;
   rngCursor: number;
+  /** "Opponents can't play actions (or items) until the caster's next turn." */
+  lockout?: { caster: PlayerId; items: boolean };
 }
 
 export const WIN_LORE = 20;

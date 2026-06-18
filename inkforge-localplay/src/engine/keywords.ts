@@ -19,15 +19,22 @@ function keywordNumber(ability: string): number {
 
 export function hasKeyword(card: CardInstance, name: string): boolean {
   const want = name.toLowerCase();
-  return card.printed.abilities.some((a) => keywordName(a.ability) === want);
+  return (
+    card.printed.abilities.some((a) => keywordName(a.ability) === want) ||
+    card.appliedEffects.some((e) => e.keyword?.toLowerCase() === want)
+  );
 }
 
-/** Summed value of a stacking keyword (Resist/Challenger), 0 if absent. */
+/** Summed value of a stacking keyword (Resist/Challenger), incl. granted ones. */
 export function keywordValue(card: CardInstance, name: string): number {
   const want = name.toLowerCase();
-  return card.printed.abilities
+  const printed = card.printed.abilities
     .filter((a) => keywordName(a.ability) === want)
     .reduce((n, a) => n + keywordNumber(a.ability), 0);
+  const granted = card.appliedEffects
+    .filter((e) => e.keyword?.toLowerCase() === want)
+    .reduce((n, e) => n + (e.keywordValue ?? 0), 0);
+  return printed + granted;
 }
 
 export function effectiveStrength(card: CardInstance): number {

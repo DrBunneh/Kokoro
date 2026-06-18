@@ -9,6 +9,7 @@ import { otherPlayer, type CardInstance, type GameState, type PlayerId } from ".
 import { makeLog, type LogEntry } from "../replay";
 import { banishCard, drawCards, findInstance } from "../zones";
 import { effectiveWillpower } from "../keywords";
+import { Rng } from "../rng";
 import { uid } from "@/lib/id";
 import type { CardType } from "@/data/card-types";
 
@@ -71,7 +72,9 @@ export type Step =
   // Choose a card from a hand (your own, or an opponent's revealed hand):
   | { do: "chooseFromHand"; as: string; from?: "self" | "opponent"; cardType?: CardType; excludeCardType?: CardType; text?: string; optional?: boolean }
   // Each opponent chooses and discards `amount` cards from their own hand.
-  | { do: "opponentDiscard"; amount: number }
+  | { do: "opponentDiscard"; amount: number; cardType?: CardType; excludeCardType?: CardType }
+  // Grant the active player an extra ink this turn (Sail the Azurite Sea):
+  | { do: "grantExtraInk"; amount?: number }
   // Move a bound (hand) card into the inkwell / discard:
   | { do: "toInkwell"; from: string; exerted?: boolean }
   | { do: "discardCard"; from: string }
@@ -88,8 +91,28 @@ export type Step =
   // Area stat change to every character in scope (optionally excluding the source):
   | { do: "buffAll" | "debuffAll"; scope?: Scope; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent"; excludeSelf?: boolean }
   | { do: "ready" | "exert"; to: string }
+  // Exert every character in scope (Demona):
+  | { do: "exertAll"; scope?: Scope }
+  // Grant a keyword to a target for this turn / permanently:
+  | { do: "grantKeyword"; to: string; keyword: string; value?: number; duration?: "end_of_turn" | "permanent" }
+  // Move up to `amount` damage counters from one bound target to another:
+  | { do: "moveDamage"; from: string; to: string; amount: number }
+  // Zone control on a bound character:
+  | { do: "putToInkwell"; to: string; exerted?: boolean } // into its owner's inkwell
+  | { do: "toBottom"; to: string }                         // to the bottom of its owner's deck
+  // Choose an item in play (suspends), then act on it (banish):
+  | { do: "chooseItem"; as: string; scope?: Scope; text?: string; optional?: boolean }
+  // Return card(s) from your discard to hand (suspends on a discard picker):
+  | { do: "returnFromDiscard"; cardType?: CardType; keepUpTo?: number; optional?: boolean; text?: string }
+  // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
+  | { do: "discardHandDraw"; player?: Who; draw: number }
+  // Opponent discards `amount` random cards:
+  | { do: "randomDiscard"; amount: number }
+  // Opponents can't play actions (or items) until your next turn:
+  | { do: "lockout"; items?: boolean }
   // Cards / lore:
   | { do: "draw"; player?: Who; amount?: number }
+  | { do: "drawTo"; player?: Who; count: number }
   | { do: "discard"; player?: Who; amount?: number }
   | { do: "gainLore" | "loseLore"; player?: Who; amount?: number };
 
@@ -135,8 +158,8 @@ export interface Suspension {
   text?: string;
   optional: boolean;
   filter?: TargetFilter;
-  /** What the resolver picks: a board character, a hand card, a Yes/No, or a revealed deck card. */
-  pick: "character" | "hand" | "confirm" | "deck";
+  /** What the resolver picks. */
+  pick: "character" | "hand" | "confirm" | "deck" | "item" | "discard";
   /** For pick === "deck": the revealed card instanceIds to show face-up. */
   reveal?: string[];
   /** For pick === "hand": whose hand to choose from. */
@@ -284,6 +307,78 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
     case "exert": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = true; break; }
+    case "exertAll": {
+      for (const c of charsInScope(state, ctx.controller, step.scope ?? "any")) c.exerted = true;
+      break;
+    }
+    case "grantKeyword": {
+      const t = resolveTarget(state, ctx, step.to);
+      if (t) t.appliedEffects.push({ source: ctx.source.instanceId, keyword: step.keyword, keywordValue: step.value, duration: step.duration ?? "end_of_turn" });
+      break;
+    }
+    case "moveDamage": {
+      const from = resolveTarget(state, ctx, step.from);
+      const to = resolveTarget(state, ctx, step.to);
+      if (from && to) {
+        const moved = Math.min(step.amount, from.damage);
+        from.damage -= moved;
+        to.damage += moved;
+        const loc = findInstance(state, to.instanceId);
+        if (loc && to.damage >= effectiveWillpower(to)) {
+          banishCard(state.players[loc.owner], to, logs, state.turnNumber);
+          ctx.banished?.push({ card: to, owner: loc.owner });
+        }
+      }
+      break;
+    }
+    case "putToInkwell": {
+      const t = resolveTarget(state, ctx, step.to);
+      const loc = t && findInstance(state, t.instanceId);
+      if (t && loc) {
+        const arr = state.players[loc.owner][loc.zone];
+        const i = arr.indexOf(t);
+        if (i >= 0) arr.splice(i, 1);
+        t.damage = 0; t.justPlayed = true; t.exerted = step.exerted ?? false; t.appliedEffects = [];
+        state.players[loc.owner].inkwell.push(t);
+      }
+      break;
+    }
+    case "toBottom": {
+      const t = resolveTarget(state, ctx, step.to);
+      const loc = t && findInstance(state, t.instanceId);
+      if (t && loc) {
+        const arr = state.players[loc.owner][loc.zone];
+        const i = arr.indexOf(t);
+        if (i >= 0) arr.splice(i, 1);
+        t.damage = 0; t.exerted = false; t.justPlayed = false; t.appliedEffects = [];
+        state.players[loc.owner].deck.push(t);
+      }
+      break;
+    }
+    case "discardHandDraw": {
+      const p = state.players[player(ctx, step.player)];
+      p.discard.push(...p.hand.splice(0, p.hand.length));
+      drawCards(p, step.draw);
+      break;
+    }
+    case "randomDiscard": {
+      const opp = state.players[otherPlayer(ctx.controller)];
+      const rng = new Rng(state.rngSeed, state.rngCursor);
+      for (let k = 0; k < step.amount && opp.hand.length > 0; k++) {
+        const i = rng.int(opp.hand.length);
+        opp.discard.push(opp.hand.splice(i, 1)[0]!);
+      }
+      state.rngCursor = rng.cursor;
+      break;
+    }
+    case "lockout": {
+      state.lockout = { caster: ctx.controller, items: step.items ?? false };
+      break;
+    }
+    case "grantExtraInk": {
+      state.players[ctx.controller].extraInk += step.amount ?? 1;
+      break;
+    }
     case "toInkwell": {
       const t = resolveTarget(state, ctx, step.from);
       const loc = t && findInstance(state, t.instanceId);
@@ -315,7 +410,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       const n = Math.min(step.amount, state.players[opp].hand.length);
       if (n <= 0) break;
       const sub: Step[] = [];
-      for (let k = 0; k < n; k++) sub.push({ do: "chooseFromHand", as: `d${k}`, from: "self", optional: true }, { do: "discardCard", from: `d${k}` });
+      for (let k = 0; k < n; k++) sub.push({ do: "chooseFromHand", as: `d${k}`, from: "self", optional: true, cardType: step.cardType, excludeCardType: step.excludeCardType }, { do: "discardCard", from: `d${k}` });
       state.pendingPrompts.push({
         id: uid(),
         player: opp,
@@ -357,6 +452,11 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       const p = state.players[player(ctx, step.player)];
       drawCards(p, step.amount ?? 1);
       logs.push(makeLog({ turnNumber: state.turnNumber, player: player(ctx, step.player), type: "CARD_DRAWN", message: `Draw ${step.amount ?? 1}` }));
+      break;
+    }
+    case "drawTo": {
+      const p = state.players[player(ctx, step.player)];
+      if (p.hand.length < step.count) drawCards(p, step.count - p.hand.length);
       break;
     }
     case "discard": {
@@ -410,11 +510,45 @@ export function runSteps(
       const handOwner = step.from === "opponent" ? otherPlayer(ctx.controller) : ctx.controller;
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "hand", handOwner };
     }
+    if (step.do === "chooseItem") {
+      if (pending != null) { ctx.vars[step.as] = pending; pending = undefined; continue; }
+      return { steps: steps.slice(i), scope: step.scope ?? "any", text: step.text, optional: step.optional ?? false, pick: "item" };
+    }
     if (step.do === "mayConfirm") {
       // A confirmed "Yes" injects a sentinel; consume it and run on. A fresh
       // arrival suspends for the Yes/No choice.
       if (pending != null) { pending = undefined; continue; }
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: true, pick: "confirm" };
+    }
+    if (step.do === "returnFromDiscard") {
+      const p = state.players[ctx.controller];
+      const matches = (c: CardInstance) => !step.cardType || c.printed.type === step.cardType;
+      const keepUpTo = step.keepUpTo ?? 1;
+      const nsK = "__rfdKept";
+      if (pending != null) {
+        let kept = parseInt(ctx.vars[nsK] ?? "0", 10);
+        if (pending !== "__rfdstop__") {
+          const idx = p.discard.findIndex((c) => c.instanceId === pending && matches(c));
+          if (idx >= 0) {
+            const card = p.discard.splice(idx, 1)[0]!;
+            card.damage = 0; card.exerted = false; card.justPlayed = false; card.appliedEffects = [];
+            p.hand.push(card);
+            kept += 1;
+            ctx.vars[nsK] = String(kept);
+          }
+        }
+        const remain = p.discard.some(matches);
+        if (pending !== "__rfdstop__" && kept < keepUpTo && remain) {
+          pending = undefined;
+          return { steps: steps.slice(i), scope: "any", text: step.text, optional: true, pick: "discard", reveal: p.discard.filter(matches).map((c) => c.instanceId) };
+        }
+        delete ctx.vars[nsK];
+        continue;
+      }
+      const pool = p.discard.filter(matches);
+      if (pool.length === 0) continue;
+      ctx.vars[nsK] = "0";
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "discard", reveal: pool.map((c) => c.instanceId) };
     }
     if (step.do === "lookAtTop") {
       const p = state.players[ctx.controller];

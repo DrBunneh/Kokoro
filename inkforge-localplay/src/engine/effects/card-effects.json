@@ -778,5 +778,137 @@
   "youhaveforgottenme": [
     { "trigger": "on_play", "steps": [{ "do": "opponentDiscard", "amount": 2 }] }
   ],
+  "suddenchill": [
+    { "trigger": "on_play", "steps": [{ "do": "opponentDiscard", "amount": 1 }] }
+  ],
+  "illhandlethis": [
+    { "trigger": "on_play", "steps": [{ "do": "opponentDiscard", "amount": 1 }] }
+  ],
+  "haveabetterlook": [
+    { "trigger": "on_play", "steps": [{ "do": "opponentDiscard", "amount": 1, "excludeCardType": "character" }] }
+  ],
+  "drasticmeasures": [
+    { "trigger": "on_play", "steps": [{ "do": "mayConfirm", "text": "discard your hand to draw 2?" }, { "do": "discardHandDraw", "player": "self", "draw": 2 }] }
+  ],
+  "awholenewworld": [
+    { "trigger": "on_play", "steps": [{ "do": "discardHandDraw", "player": "self", "draw": 7 }, { "do": "discardHandDraw", "player": "opponent", "draw": 7 }] }
+  ],
+  "socheesy": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "draw a card, then discard a card?" },
+      { "do": "draw", "player": "self", "amount": 1 },
+      { "do": "chooseFromHand", "as": "d", "from": "self", "optional": true, "text": "discard a card" },
+      { "do": "discardCard", "from": "d" }
+    ] }
+  ],
+  "strategicedge": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "draw a card, then discard a card?" },
+      { "do": "draw", "player": "self", "amount": 1 },
+      { "do": "chooseFromHand", "as": "d", "from": "self", "optional": true, "text": "discard a card" },
+      { "do": "discardCard", "from": "d" }
+    ] }
+  ],
+  "wedonttalkaboutbruno": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "return chosen opposing character to hand" },
+      { "do": "returnToHand", "to": "t" },
+      { "do": "randomDiscard", "amount": 1 }
+    ] }
+  ],
+  "blowthewhistle": [
+    { "trigger": "on_play", "steps": [{ "do": "lockout", "items": false }] }
+  ],
+  "keeptheancientways": [
+    { "trigger": "on_play", "steps": [{ "do": "lockout", "items": true }] }
+  ],
+  "flymypet": [
+    { "trigger": "on_banish", "steps": [{ "do": "mayConfirm", "text": "draw a card?" }, { "do": "draw", "player": "self", "amount": 1 }] }
+  ],
+  "thebookknowseverything": [
+    { "trigger": "activated", "steps": [{ "do": "draw", "player": "self", "amount": 2 }] }
+  ],
+  "breakingrecords": [
+    { "trigger": "activated", "steps": [{ "do": "draw", "player": "self", "amount": 1 }, { "do": "gainLore", "player": "self", "amount": 1 }] }
+  ],
+  "readyornot": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "chosen character gains Challenger +3 this turn" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Challenger", "value": 3, "duration": "end_of_turn" }
+    ] },
+    { "trigger": "on_banish", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "chosen character gains Challenger +3 this turn" },
+      { "do": "grantKeyword", "to": "t", "keyword": "Challenger", "value": 3, "duration": "end_of_turn" }
+    ] }
+  ],
+  "crystallize": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "exert chosen opposing character" },
+      { "do": "exert", "to": "t" }
+    ] }
+  ],
+  "adsaxumcommutate": [
+    { "trigger": "on_play", "steps": [
+      { "do": "exertAll", "scope": "enemy" },
+      { "do": "drawTo", "player": "self", "count": 3 },
+      { "do": "drawTo", "player": "opponent", "count": 3 }
+    ] }
+  ],
+  "enhancedhealing": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "from", "scope": "any", "optional": true, "text": "move up to 3 damage from this character…" },
+      { "do": "chooseCharacter", "as": "to", "scope": "enemy", "optional": true, "text": "…onto this opposing character" },
+      { "do": "moveDamage", "from": "from", "to": "to", "amount": 3 }
+    ] }
+  ],
+  "isthereadownsidetothis": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "put chosen opposing character into their inkwell" },
+      { "do": "putToInkwell", "to": "t" }
+    ] }
+  ],
+  "youdontneedthat": [
+    { "trigger": "on_play", "steps": [{ "do": "chooseItem", "as": "it", "scope": "any", "optional": true, "text": "banish chosen item" }, { "do": "banish", "to": "it" }] }
+  ],
+  "bladesoffury": [
+    { "trigger": "on_play", "steps": [{ "do": "chooseItem", "as": "it", "scope": "any", "optional": true, "text": "banish chosen item" }, { "do": "banish", "to": "it" }] }
+  ],
+  "sobeit": [
+    { "trigger": "on_play", "steps": [
+      { "do": "buffAll", "scope": "ally", "strength": 1, "duration": "end_of_turn" },
+      { "do": "chooseItem", "as": "it", "scope": "any", "optional": true, "text": "you may banish chosen item" },
+      { "do": "banish", "to": "it" }
+    ] }
+  ],
+  "notimeforwisecracks": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "optional": true, "text": "chosen character gets +1 ¤ for each other character you have" },
+      { "do": "buff", "to": "t", "amountPer": { "scope": "ally", "excludeSelf": true }, "duration": "end_of_turn" }
+    ] }
+  ],
+  "superpeanutpowers": [
+    { "trigger": "on_challenge", "steps": [{ "do": "gainLore", "player": "self", "amount": 2 }] }
+  ],
+  "cheeeehoooo": [
+    { "trigger": "on_challenge", "steps": [
+      { "do": "mayConfirm", "text": "return an action card from your discard to hand?" },
+      { "do": "returnFromDiscard", "cardType": "action", "keepUpTo": 1, "optional": true }
+    ] }
+  ],
+  "hocketypockety": [
+    { "trigger": "activated", "steps": [{ "do": "returnFromDiscard", "cardType": "item", "keepUpTo": 1, "optional": false }] }
+  ],
+  "coolestcollection": [
+    { "trigger": "on_play", "steps": [{ "do": "returnFromDiscard", "cardType": "item", "keepUpTo": 2, "optional": true }] }
+  ],
+  "sailtheazuritesea": [
+    { "trigger": "on_play", "steps": [{ "do": "grantExtraInk", "amount": 1 }, { "do": "draw", "player": "self", "amount": 1 }] }
+  ],
+  "hehurledhisthunderbolt": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "deal 4 damage to chosen character" },
+      { "do": "dealDamage", "to": "t", "amount": 4 }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

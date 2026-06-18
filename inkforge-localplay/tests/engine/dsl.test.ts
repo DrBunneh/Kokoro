@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createGame, reduce } from "@/engine/actions";
+import { keywordValue } from "@/engine/keywords";
 import type { CardEffects } from "@/engine/effects/dsl";
 import type { CardLookup, GameState } from "@/engine/state";
 import type { PrintedCard } from "@/data/card-types";
@@ -475,6 +476,80 @@ describe("Effect DSL + the bag", () => {
     expect(g.pendingPrompts).toHaveLength(0);
     expect(g.players[2].hand.length).toBe(p2HandBefore - 2);
     expect(g.players[2].discard.length).toBe(2);
+  });
+
+  it("grantKeyword adds Challenger for the turn (read by keywordValue)", () => {
+    const effects: CardEffects = {
+      pump: [{ trigger: "on_play", steps: [{ do: "chooseCharacter", as: "t", scope: "any", optional: true }, { do: "grantKeyword", to: "t", keyword: "Challenger", value: 3, duration: "end_of_turn" }] }],
+    };
+    let g = toPlay(lookupP1Ability("Pump", "pump", "Chosen character gains Challenger +3."));
+    const ally = { instanceId: "al", printed: printed("al"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].field.push(ally);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "al" }, effects).state;
+    expect(keywordValue(g.players[1].field.find((c) => c.instanceId === "al")!, "Challenger")).toBe(3);
+  });
+
+  it("returnFromDiscard pulls a filtered card back to hand", () => {
+    const effects: CardEffects = {
+      recur: [{ trigger: "on_play", steps: [{ do: "returnFromDiscard", cardType: "item", keepUpTo: 1, optional: true }] }],
+    };
+    let g = toPlay(lookupP1Ability("Recur", "recur", "Return an item from your discard."));
+    g.players[1].discard.push(
+      { instanceId: "ditem", printed: printed("ditem", { type: "item" }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+      { instanceId: "dchar", printed: printed("dchar", { type: "character" }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] },
+    );
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts[0]!.pick).toBe("discard");
+    expect(g.pendingPrompts[0]!.reveal).toEqual(["ditem"]); // only the item is offered
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "ditem" }, effects).state;
+    expect(g.players[1].hand.some((c) => c.instanceId === "ditem")).toBe(true);
+    expect(g.players[1].discard.some((c) => c.instanceId === "ditem")).toBe(false);
+  });
+
+  it("chooseItem + banish removes a chosen item", () => {
+    const effects: CardEffects = {
+      smash: [{ trigger: "on_play", steps: [{ do: "chooseItem", as: "it", scope: "any", optional: true }, { do: "banish", to: "it" }] }],
+    };
+    let g = toPlay(lookupP1Ability("Smash", "smash", "Banish chosen item."));
+    g.players[2].items.push({ instanceId: "anitem", printed: printed("anitem", { type: "item" }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts[0]!.pick).toBe("item");
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "anitem" }, effects).state;
+    expect(g.players[2].items.some((c) => c.instanceId === "anitem")).toBe(false);
+    expect(g.players[2].discard.some((c) => c.instanceId === "anitem")).toBe(true);
+  });
+
+  it("lockout stops the opponent from playing actions until the caster's next turn", () => {
+    const effects: CardEffects = { hush: [{ trigger: "on_play", steps: [{ do: "lockout", items: false }] }] };
+    let g = toPlay(lookupP1Ability("Hush", "hush", "Opponents can't play actions."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.lockout?.caster).toBe(1);
+    g = reduce(g, { type: "END_TURN" }, effects).state; // now player 2's turn
+    // Give P2 ink and an action in hand.
+    g.players[2].inkwell = [{ instanceId: "i", printed: printed("i"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] }];
+    g.players[2].hand.push({ instanceId: "act", printed: printed("act", { type: "action", cost: 1 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    expect(() => reduce(g, { type: "PLAY_CARD", cardInstanceId: "act" }, effects)).toThrow(/can't play actions/i);
+  });
+
+  it("grantExtraInk allows a second inking this turn", () => {
+    const effects: CardEffects = { sail: [{ trigger: "on_play", steps: [{ do: "grantExtraInk", amount: 1 }, { do: "draw", player: "self", amount: 1 }] }] };
+    let g = toPlay((id) => printed(id, { inkable: true }));
+    // Ink once normally, then a second ink is rejected.
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(() => reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects)).toThrow(/already inked/i);
+    // Inject + play a Sail action that grants an extra ink; give ready ink for its cost.
+    g.players[1].inkwell.push({ instanceId: "rdy", printed: printed("rdy"), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    g.players[1].hand.push({ instanceId: "sail", printed: printed("sail", { type: "action", cost: 1, specialAbilities: [{ name: "Sail", slug: "sail", effect: "ink extra, draw" }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: "sail" }, effects).state;
+    expect(g.players[1].extraInk).toBe(1);
+    // Now a second ink is allowed and consumes the bonus.
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.players[1].extraInk).toBe(0);
   });
 
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
