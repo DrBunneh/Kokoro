@@ -737,6 +737,8 @@ export function reduce(
         logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} shifted ${card.printed.fullName} onto ${base.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
         recordPlay(p, card);
         fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
+        // The shifted-over card is now under the new one (Cheshire "it's loads of fun").
+        if (card.cardsUnder.length > 0) fireTrigger(next, "on_put_under", card, next.currentPlayer, logs, effects, true, banished);
         drainBanish(next, banished, logs, effects);
         return { state: next, logs };
       }
@@ -870,6 +872,28 @@ export function reduce(
       const p = next.players[next.currentPlayer];
       const source = [...p.field, ...p.items].find((c) => c.instanceId === action.cardInstanceId);
       if (!source) throw new GameError("Card not in play");
+
+      // Boost: "Once during your turn, pay N {I} to put the top card of your deck
+      // facedown under this character." (Cheshire Cat, Pete - Ghost.)
+      if (action.slug === "boost") {
+        if (!source.printed.abilities.some((a) => a.ability.toLowerCase().startsWith("boost"))) throw new GameError("Card has no Boost");
+        const m = source.printed.rulesText.match(/boost\D*(\d+)\s*\{i\}/i);
+        const cost = m ? parseInt(m[1]!, 10) : 0;
+        const onceKey = `${source.instanceId}:boost`;
+        if ((next.usedActivated ?? []).includes(onceKey)) throw new GameError("Already boosted this turn");
+        if (readyInk(p).length < cost) throw new GameError("Not enough ink");
+        payInk(p, cost);
+        (next.usedActivated ??= []).push(onceKey);
+        const top = p.deck.shift();
+        if (top) {
+          source.cardsUnder.push(top);
+          logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "ABILITY_TRIGGERED", message: `${p.name} boosted ${source.printed.fullName}`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
+          fireTrigger(next, "on_put_under", source, next.currentPlayer, logs, effects, true, banished);
+        }
+        drainBanish(next, banished, logs, effects);
+        return { state: next, logs };
+      }
+
       const sa = source.printed.specialAbilities.find(
         (a) => (action.slug ? a.slug === action.slug : true) && classifyTrigger(a.effect, source.printed.type) === "activated",
       );

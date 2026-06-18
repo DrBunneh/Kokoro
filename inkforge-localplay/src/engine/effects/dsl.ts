@@ -32,6 +32,7 @@ export type Trigger =
   | "on_draw" // whenever you draw a card (your field watches)
   | "on_opponent_draw" // whenever an opponent draws on their turn (your field watches)
   | "on_opponent_discard" // whenever an opponent discards a card (your field watches)
+  | "on_put_under" // whenever a card is put under this character (Boost / Shift)
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
@@ -143,7 +144,7 @@ export type Step =
   // Scry: reveal the top `count` of your deck, keep up to `keepUpTo` (default 1,
   // optionally filtered) in hand, send the rest to the bottom or inkwell. When
   // `optional`, the player may keep none.
-  | { do: "lookAtTop"; count: number; rest?: "bottom" | "inkwellExerted"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
+  | { do: "lookAtTop"; count: number; countFromUnder?: boolean; rest?: "bottom" | "inkwellExerted"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
   // Banish every character (Be Prepared) — or a scoped subset, optionally
   // limited to damaged characters or those at/under a strength (Prince Phillip / Sisu).
   | { do: "banishAll"; scope?: Scope; damaged?: boolean; maxStrength?: number }
@@ -930,8 +931,9 @@ export function runSteps(
         logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_DRAWN", message: `Scry: kept ${kept} of top ${n}` }));
         continue;
       }
-      const top = p.deck.slice(0, step.count);
-      if (top.length === 0) continue; // empty deck — nothing to look at
+      const count = step.countFromUnder ? ctx.source.cardsUnder.length : step.count;
+      const top = p.deck.slice(0, count);
+      if (top.length === 0) continue; // empty deck (or nothing under) — nothing to look at
       ctx.vars[nsN] = String(top.length);
       ctx.vars[nsK] = "0";
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "deck", reveal: top.map((c) => c.instanceId) };

@@ -1567,6 +1567,17 @@
   "isentenceyou": [
     { "trigger": "on_opponent_discard", "steps": [{ "do": "draw", "player": "self", "amount": 1 }] }
   ],
+  "itsloadsoffun": [
+    { "trigger": "on_put_under", "steps": [
+      { "do": "mayConfirm", "text": "move up to 2 damage to an opposing character?" },
+      { "do": "chooseCharacter", "as": "a", "scope": "any", "optional": true, "text": "move 2 damage from this character" },
+      { "do": "chooseCharacter", "as": "b", "scope": "enemy", "text": "to this opposing character" },
+      { "do": "moveDamage", "from": "a", "to": "b", "amount": 2 }
+    ] }
+  ],
+  "forebodingglance": [
+    { "trigger": "on_quest", "steps": [{ "do": "lookAtTop", "count": 0, "countFromUnder": true, "keepUpTo": 1, "rest": "bottom" }] }
+  ],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],
