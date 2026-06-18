@@ -9,6 +9,7 @@ import { otherPlayer, type CardInstance, type GameState, type PlayerId } from ".
 import { makeLog, type LogEntry } from "../replay";
 import { banishCard, drawCards, findInstance } from "../zones";
 import { effectiveWillpower } from "../keywords";
+import type { CardType } from "@/data/card-types";
 
 export type Trigger =
   | "on_play"
@@ -46,6 +47,26 @@ export interface EffectDef {
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
+
+export type AbilityKind = Trigger | "activated" | "static";
+
+/**
+ * Classify when an ability's printed text fires, so we only auto-resolve or
+ * surface a Manual-Mode prompt on the matching event (not for every ability on
+ * play). Activated abilities need an explicit activation; statics never prompt.
+ */
+export function classifyTrigger(effectText: string, cardType: CardType): AbilityKind {
+  const t = effectText.trim().toLowerCase();
+  if (/^when you play this/.test(t)) return "on_play";
+  if (/^whenever this character quests/.test(t)) return "on_quest";
+  if (/^whenever this character challenges/.test(t)) return "on_challenge";
+  if (/^when this character is banished/.test(t)) return "on_banish";
+  // Activated: a cost (exert/ink/"banish this") preceding an em dash.
+  if (/^(\{e\}|\d+\s*\{[il]\}|banish this)[^—]*—/.test(t) || /^\{e\}/.test(t)) return "activated";
+  // For actions/songs the whole text is the on-play effect.
+  if (cardType === "song" || cardType === "action") return "on_play";
+  return "static";
+}
 
 export interface EffectContext {
   controller: PlayerId;

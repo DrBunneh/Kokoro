@@ -27,7 +27,7 @@ import {
   keywordValue,
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
-import { runSteps, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
+import { classifyTrigger, runSteps, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
 
@@ -184,8 +184,9 @@ function fireTrigger(
       continue;
     }
 
-    // Not in the DSL — surface for Manual Mode (T2 honesty), on play only.
-    if (surfaceManual && defs.length === 0) {
+    // Not in the DSL — surface for Manual Mode only if this ability actually
+    // fires on THIS event (not activated/static/other-trigger abilities).
+    if (surfaceManual && classifyTrigger(sa.effect, source.printed.type) === trigger) {
       state.pendingPrompts.push({
         id: uid(),
         player: controller,
@@ -412,7 +413,7 @@ export function reduce(
       p.lore += gained;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
-      fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, false);
+      fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, true);
       // Support (rules §10.13): add this character's {S} to another chosen one.
       if (hasKeyword(card, "Support")) {
         const amount = effectiveStrength(card);

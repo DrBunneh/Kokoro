@@ -39,8 +39,8 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].deck.length).toBe(deckBefore - 1); // the auto draw
   });
 
-  it("surfaces an uncovered ability as a Manual-Mode prompt that blocks play", () => {
-    let g = toPlay(lookupP1Ability("Mystery", "mystery", "Do something unusual."));
+  it("surfaces an uncovered on-play ability as a Manual-Mode prompt that blocks play", () => {
+    let g = toPlay(lookupP1Ability("Mystery", "mystery", "When you play this character, do something unusual."));
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, {}).state;
     g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, {}).state;
     expect(g.pendingPrompts).toHaveLength(1);
@@ -51,6 +51,20 @@ describe("Effect DSL + the bag", () => {
     g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId }, {}).state;
     expect(g.pendingPrompts).toHaveLength(0);
     expect(() => reduce(g, { type: "END_TURN" }, {})).not.toThrow();
+  });
+
+  it("does NOT prompt on play for an activated or static ability", () => {
+    // Activated ({E} — …) abilities need an explicit activation, not a play prompt.
+    let g = toPlay(lookupP1Ability("Tap", "tap", "{E} — Draw a card."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, {}).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, {}).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+
+    // A static keyword ability (no event) never prompts either.
+    let g2 = toPlay(lookupP1Ability("Tough", "tough", "Resist +1 (Damage dealt to this character is reduced by 1.)"));
+    g2 = reduce(g2, { type: "ADD_TO_INK", cardInstanceId: g2.players[1].hand[1]!.instanceId }, {}).state;
+    g2 = reduce(g2, { type: "PLAY_CARD", cardInstanceId: g2.players[1].hand[0]!.instanceId }, {}).state;
+    expect(g2.pendingPrompts).toHaveLength(0);
   });
 
   it("pushes a choice prompt for a targeted effect, then resolves on target", () => {

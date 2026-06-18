@@ -276,15 +276,15 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         <span>✋ {oppP.hand.length}</span>
         <span>🂠 {oppP.deck.length}</span>
       </div>
+      {/* Opponent side: board → inkwell (inkwell nearest the centre line). */}
       <FieldRow cards={oppP.field} enemy mode={attacker || prompt ? "target" : "none"} onCardTap={(c) => { if (promptTap(c.instanceId)) return; if (attacker) { dispatch({ type: "ATTACK", attackerId: attacker, defenderId: c.instanceId }); setAttacker(null); } }} />
+      <ItemRow items={oppP.items} enemy onItemTap={(c) => promptTap(c.instanceId)} />
+      <InkPool player={oppP} />
 
-      {/* Inkwell pool fills the gap between the two fields. */}
-      <div className="flex flex-1 flex-col justify-center gap-1">
-        <InkPool player={oppP} />
-        <InkPool player={meP} mine />
-      </div>
+      {/* Gap between the two players' sides. */}
+      <div className="flex-1" />
 
-      {/* My field */}
+      {/* My side: board → inkwell → (status + hand below). */}
       <FieldRow
         cards={meP.field}
         mode={attacker ? "attacking" : "mine"}
@@ -296,6 +296,8 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
           setSelField((id) => (id === c.instanceId ? null : c.instanceId));
         }}
       />
+      <ItemRow items={meP.items} onItemTap={(c) => promptTap(c.instanceId)} />
+      <InkPool player={meP} mine />
       {prompt && <PromptBar state={state} prompt={prompt} me={me} manualSel={manualSel} onClearManualSel={() => setManualSel(null)} />}
       {!prompt && selectedChar && !attacker && (
         <div className="flex gap-1">
@@ -421,6 +423,26 @@ function FieldRow({
             selectedId === c.instanceId && "ring-2 ring-amber-300",
             mode === "target" && enemy && "ring-1 ring-rose-300",
           )}
+        >
+          <CardThumb card={c.printed} />
+          {c.damage > 0 && <span className="absolute right-0 top-0 rounded-bl bg-rose-600 px-1 text-[10px] font-bold text-white">{c.damage}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Items / locations in play. Shown as a thin strip on the owner's board. */
+function ItemRow({ items, enemy, onItemTap }: { items: CardInstance[]; enemy?: boolean; onItemTap: (c: CardInstance) => void }) {
+  if (items.length === 0) return null;
+  return (
+    <div className={cn("flex items-center gap-1 overflow-x-auto rounded-lg px-1 py-0.5", enemy ? "bg-rose-500/5" : "bg-amber-500/5")}>
+      <span className="shrink-0 text-[9px] uppercase tracking-wide text-slate-500">items</span>
+      {items.map((c) => (
+        <button
+          key={c.instanceId}
+          onClick={() => onItemTap(c)}
+          className={cn("relative w-12 shrink-0 rounded transition", c.exerted && "rotate-6 opacity-80")}
         >
           <CardThumb card={c.printed} />
           {c.damage > 0 && <span className="absolute right-0 top-0 rounded-bl bg-rose-600 px-1 text-[10px] font-bold text-white">{c.damage}</span>}
