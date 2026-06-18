@@ -12,11 +12,11 @@ import {
 } from "@/net/localnet";
 import { NetGame } from "@/net/netgame";
 import { createGame } from "@/engine/actions";
-import { hasKeyword } from "@/engine/keywords";
+import { hasKeyword, keywordValue } from "@/engine/keywords";
+import { InkPool, ItemRow, activatedAbility } from "@/ui/components/BoardZones";
 import { cn } from "@/lib/cn";
 import type { Deck } from "@/data/deck-types";
-import type { PrintedCard } from "@/data/card-types";
-import type { PlayerId } from "@/engine/state";
+import type { CardInstance, GameState, PlayerId } from "@/engine/state";
 import type { PluginListenerHandle } from "@capacitor/core";
 
 type Phase = "menu" | "hosting" | "joining" | "connecting" | "connected" | "error";
@@ -257,7 +257,10 @@ export function LocalPlayScreen() {
 function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; onLeave: () => void }) {
   const index = useCardDb();
   const [sel, setSel] = useState<string | null>(null);
+  const [selField, setSelField] = useState<string | null>(null);
+  const [selItem, setSelItem] = useState<string | null>(null);
   const [attacker, setAttacker] = useState<string | null>(null);
+  const [manualSel, setManualSel] = useState<string | null>(null);
   const s = game.state;
   const opp: PlayerId = viewer === 1 ? 2 : 1;
   const me = s.players[viewer];
@@ -297,39 +300,100 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
     );
   }
 
-  const selChar = me.field.find((c) => c.instanceId === sel);
+  const readyInk = me.inkwell.filter((c) => !c.exerted).length;
+  const selChar = me.field.find((c) => c.instanceId === selField);
+  const charAbility = selChar ? activatedAbility(selChar) : undefined;
+  const selectedItem = me.items.find((c) => c.instanceId === selItem);
+  const itemAbility = selectedItem ? activatedAbility(selectedItem) : undefined;
+  const prompt = s.pendingPrompts[0] ?? null;
+  const myPrompt = !!prompt && prompt.player === viewer;
+
+  // Route a board tap to my pending prompt (target choice or manual selection).
+  function promptTap(id: string): boolean {
+    if (!myPrompt || !prompt) return false;
+    if (prompt.resume) act({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: id });
+    else setManualSel(id);
+    return true;
+  }
+
+  const greedySingers = (cost: number): string[] => {
+    const ids: string[] = []; let value = 0;
+    for (const c of me.field) {
+      if (c.printed.type !== "character" || c.exerted) continue;
+      value += Math.max(c.printed.cost, keywordValue(c, "Singer"));
+      ids.push(c.instanceId);
+      if (value >= cost) return ids;
+    }
+    return value >= cost ? ids : [];
+  };
+
   return (
     <div className="flex h-full flex-col gap-2 text-sm">
       <div className="rounded bg-white/5 px-2 py-1 text-xs">{them.name} — ◊{them.lore} ✋{them.hand.length} 🂠{them.deck.length}</div>
-      <Row cards={them.field.map((c) => c.printed)} onTap={(i) => { if (attacker) { act({ type: "ATTACK", attackerId: attacker, defenderId: them.field[i]!.instanceId }); setAttacker(null); } }} />
-      <div className="mt-auto text-center text-xs text-amber-200">{myTurn ? (attacker ? "Tap an enemy to challenge" : "Your turn") : "Opponent's turn"}</div>
-      <Row
-        cards={me.field.map((c) => c.printed)}
-        highlight={me.field.findIndex((c) => c.instanceId === (attacker ?? sel))}
-        onTap={(i) => { if (!myTurn) return; const c = me.field[i]!; setAttacker(null); setSel((x) => (x === c.instanceId ? null : c.instanceId)); }}
+      {/* Opponent: board → items → inkwell (nearest the centre). */}
+      <NetField cards={them.field} enemy targeting={!!attacker || myPrompt} onTap={(c) => { if (promptTap(c.instanceId)) return; if (attacker) { act({ type: "ATTACK", attackerId: attacker, defenderId: c.instanceId }); setAttacker(null); } }} />
+      <ItemRow items={them.items} enemy onItemTap={(c) => promptTap(c.instanceId)} />
+      <InkPool player={them} />
+
+      <div className="flex-1" />
+
+      {/* Me: board → items → inkwell. */}
+      <NetField
+        cards={me.field}
+        selectedId={attacker ?? selField}
+        onTap={(c) => {
+          if (promptTap(c.instanceId)) return;
+          if (attacker) { setAttacker(null); return; }
+          if (!myTurn) return;
+          setSel(null); setSelItem(null);
+          setSelField((x) => (x === c.instanceId ? null : c.instanceId));
+        }}
       />
-      {selChar && myTurn && (
+      <ItemRow
+        items={me.items}
+        selectedId={selItem}
+        onItemTap={(c) => { if (promptTap(c.instanceId)) return; if (!myTurn) return; setSelField(null); setSelItem((x) => (x === c.instanceId ? null : c.instanceId)); }}
+      />
+      <InkPool player={me} mine />
+
+      {prompt && <NetPrompt state={s} prompt={prompt} mine={myPrompt} manualSel={manualSel} dispatch={act} onClearManualSel={() => setManualSel(null)} />}
+
+      {!prompt && selChar && myTurn && (
         <div className="flex gap-1">
-          <button disabled={selChar.exerted || selChar.justPlayed} onClick={() => { act({ type: "QUEST", cardInstanceId: selChar.instanceId }); setSel(null); }} className="min-h-tap flex-1 rounded bg-white/10 text-xs disabled:opacity-30">Quest</button>
-          <button disabled={selChar.exerted || (selChar.justPlayed && !hasKeyword(selChar, "Rush"))} onClick={() => { setAttacker(selChar.instanceId); setSel(null); }} className="min-h-tap flex-1 rounded bg-amber-500/30 text-xs text-amber-100 disabled:opacity-30">Challenge</button>
+          <button disabled={selChar.exerted || selChar.justPlayed} onClick={() => { act({ type: "QUEST", cardInstanceId: selChar.instanceId }); setSelField(null); }} className="min-h-tap flex-1 rounded bg-white/10 text-xs disabled:opacity-30">Quest</button>
+          <button disabled={selChar.exerted || (selChar.justPlayed && !hasKeyword(selChar, "Rush"))} onClick={() => { setAttacker(selChar.instanceId); setSelField(null); }} className="min-h-tap flex-1 rounded bg-amber-500/30 text-xs text-amber-100 disabled:opacity-30">Challenge</button>
+          {charAbility && <button onClick={() => { act({ type: "ACTIVATE_ABILITY", cardInstanceId: selChar.instanceId, slug: charAbility.slug }); setSelField(null); }} className="min-h-tap flex-1 rounded bg-ink-amethyst/40 text-xs text-violet-100" title={charAbility.effect}>⚡ {charAbility.name}</button>}
         </div>
       )}
-      <div className="rounded bg-white/5 px-2 py-1 text-xs text-ink-sapphire">{me.name} (you) — ◊{me.lore} 💧{me.inkwell.filter((c) => !c.exerted).length}/{me.inkwell.length} 🂠{me.deck.length}</div>
+      {!prompt && selectedItem && itemAbility && myTurn && (
+        <button onClick={() => { act({ type: "ACTIVATE_ABILITY", cardInstanceId: selectedItem.instanceId, slug: itemAbility.slug }); setSelItem(null); }} className="min-h-tap w-full rounded bg-ink-amethyst/40 text-xs text-violet-100" title={itemAbility.effect}>⚡ {itemAbility.name} — {itemAbility.effect}</button>
+      )}
+
+      <div className="rounded bg-white/5 px-2 py-1 text-xs text-ink-sapphire">{me.name} (you) — ◊{me.lore} 💧{readyInk}/{me.inkwell.length} 🂠{me.deck.length}</div>
+      {attacker && <p className="text-center text-xs text-amber-200">Tap an enemy character to challenge, or tap your attacker again to cancel.</p>}
+
       <div className="flex items-end gap-1 overflow-x-auto rounded bg-white/5 p-1">
-        {me.hand.map((c) => (
-          <div key={c.instanceId} className="shrink-0">
-            <button onClick={() => setSel((x) => (x === c.instanceId ? null : c.instanceId))} className={cn("block w-14 rounded", sel === c.instanceId && "ring-2 ring-ink-sapphire")}><CardThumb card={c.printed} /></button>
-            {sel === c.instanceId && myTurn && (
-              <div className="mt-0.5 flex gap-0.5">
-                <button disabled={s.hasInkedThisTurn || !c.printed.inkable} onClick={() => { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-white/10 text-[10px] disabled:opacity-30">Ink</button>
-                <button disabled={me.inkwell.filter((k) => !k.exerted).length < c.printed.cost} onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-ink-sapphire text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
-              </div>
-            )}
-          </div>
-        ))}
+        {me.hand.map((c) => {
+          const shiftCost = keywordValue(c, "Shift");
+          const shiftBase = shiftCost > 0 ? me.field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
+          const singers = c.printed.type === "song" ? greedySingers(c.printed.cost) : [];
+          return (
+            <div key={c.instanceId} className="shrink-0">
+              <button onClick={() => { setSelField(null); setSelItem(null); setSel((x) => (x === c.instanceId ? null : c.instanceId)); }} className={cn("block w-14 rounded", sel === c.instanceId && "ring-2 ring-ink-sapphire")}><CardThumb card={c.printed} /></button>
+              {sel === c.instanceId && myTurn && !prompt && (
+                <div className="mt-0.5 flex flex-wrap gap-0.5">
+                  <button disabled={s.hasInkedThisTurn || !c.printed.inkable} onClick={() => { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-white/10 text-[10px] disabled:opacity-30">Ink</button>
+                  <button disabled={readyInk < c.printed.cost} onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-ink-sapphire text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
+                  {shiftBase && readyInk >= shiftCost && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: shiftBase.instanceId }); setSel(null); }} className="flex-1 rounded bg-ink-amethyst/70 text-[10px] text-white">Shift {shiftCost}</button>}
+                  {singers.length > 0 && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, singers }); setSel(null); }} className="flex-1 rounded bg-ink-emerald/70 text-[10px] text-white">Sing</button>}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       <div className="flex gap-1">
-        <button disabled={!myTurn} onClick={() => act({ type: "END_TURN" })} className="min-h-tap flex-[2] rounded bg-ink-sapphire text-xs font-semibold text-white disabled:opacity-40">End turn</button>
+        <button disabled={!myTurn || !!prompt} onClick={() => act({ type: "END_TURN" })} className="min-h-tap flex-[2] rounded bg-ink-sapphire text-xs font-semibold text-white disabled:opacity-40">End turn</button>
         <button onClick={() => act({ type: "GAME_FINISH", winner: opp, reason: "concession" })} className="min-h-tap flex-1 rounded bg-rose-500/20 text-xs text-rose-200">Concede</button>
         <button onClick={onLeave} className="min-h-tap flex-1 rounded bg-white/10 text-xs">Leave</button>
       </div>
@@ -337,15 +401,78 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
   );
 }
 
-function Row({ cards, onTap, highlight }: { cards: PrintedCard[]; onTap: (i: number) => void; highlight?: number }) {
+/** Instance-aware field row with damage badge + exert/drying styling. */
+function NetField({ cards, enemy, selectedId, targeting, onTap }: { cards: CardInstance[]; enemy?: boolean; selectedId?: string | null; targeting?: boolean; onTap: (c: CardInstance) => void }) {
   return (
-    <div className="flex min-h-[60px] items-center gap-1 overflow-x-auto rounded bg-white/5 p-1">
-      {cards.length === 0 && <span className="px-2 text-[10px] text-slate-500">empty</span>}
-      {cards.map((c, i) => (
-        <button key={i} onClick={() => onTap(i)} className={cn("w-14 shrink-0 rounded", highlight === i && "ring-2 ring-amber-300")}>
-          <CardThumb card={c} />
+    <div className={cn("flex min-h-[60px] items-center gap-1 overflow-x-auto rounded p-1", enemy ? "bg-rose-500/5" : "bg-emerald-500/5")}>
+      {cards.length === 0 && <span className="px-2 text-[10px] text-slate-500">{enemy ? "No enemy characters" : "Your field is empty"}</span>}
+      {cards.map((c) => (
+        <button
+          key={c.instanceId}
+          onClick={() => onTap(c)}
+          className={cn(
+            "relative w-14 shrink-0 rounded transition",
+            c.exerted && "rotate-6 opacity-80",
+            c.justPlayed && "brightness-75",
+            selectedId === c.instanceId && "ring-2 ring-amber-300",
+            targeting && enemy && "ring-1 ring-rose-300",
+          )}
+        >
+          <CardThumb card={c.printed} />
+          {c.damage > 0 && <span className="absolute right-0 top-0 rounded-bl bg-rose-600 px-1 text-[10px] font-bold text-white">{c.damage}</span>}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Pending-ability resolver for networked play (mirrors the hot-seat PromptBar). */
+function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel }: {
+  state: GameState;
+  prompt: NonNullable<GameState["pendingPrompts"][number]>;
+  mine: boolean;
+  manualSel: string | null;
+  dispatch: (a: Parameters<NetGame["localAction"]>[0]) => void;
+  onClearManualSel: () => void;
+}) {
+  const meP = state.players[prompt.player];
+  const onBoard = [...state.players[1].field, ...state.players[2].field, ...state.players[1].items, ...state.players[2].items];
+  const card = manualSel ? onBoard.find((c) => c.instanceId === manualSel) : null;
+  if (!mine) {
+    return <div className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-100">{state.players[prompt.player].name} is resolving: {prompt.text}</div>;
+  }
+  const setLore = (value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setLore", player: prompt.player, value }] });
+  const setDamage = (id: string, value: number) => dispatch({ type: "MANUAL_ADJUST", ops: [{ kind: "setDamage", instanceId: id, value }] });
+  return (
+    <div className="space-y-2 rounded-lg bg-amber-500/15 p-2 text-xs">
+      <p className="font-semibold text-amber-100">Resolve ability:</p>
+      <p className="text-amber-50">{prompt.text}</p>
+      {prompt.resume ? (
+        <div className="flex items-center gap-2">
+          <span className="flex-1 text-amber-200">Tap a character to target.</span>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">No target</button>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span>Your lore:</span>
+            <button onClick={() => setLore(Math.max(0, meP.lore - 1))} className="h-6 w-6 rounded bg-white/10">−</button>
+            <span className="w-5 text-center">{meP.lore}</span>
+            <button onClick={() => setLore(meP.lore + 1)} className="h-6 w-6 rounded bg-white/10">+</button>
+          </div>
+          {card && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate">{card.printed.fullName}</span>
+              <span>dmg</span>
+              <button onClick={() => setDamage(card.instanceId, Math.max(0, card.damage - 1))} className="h-6 w-6 rounded bg-white/10">−</button>
+              <span className="w-5 text-center">{card.damage}</span>
+              <button onClick={() => setDamage(card.instanceId, card.damage + 1)} className="h-6 w-6 rounded bg-white/10">+</button>
+            </div>
+          )}
+          <p className="text-[10px] text-amber-200">Tap a card to adjust it.</p>
+          <button onClick={() => { dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id }); onClearManualSel(); }} className="w-full rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Done</button>
+        </div>
+      )}
     </div>
   );
 }
