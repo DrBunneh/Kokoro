@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.os.Build
+import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -14,7 +16,10 @@ import fi.iki.elonen.NanoWSD
 import fi.iki.elonen.NanoWSD.WebSocket
 import fi.iki.elonen.NanoWSD.WebSocketFrame
 import java.io.IOException
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.util.ArrayDeque
+import java.util.Collections
 
 /**
  * Local-network play (spec §8, revised): zero-config discovery + direct
@@ -43,6 +48,32 @@ class LocalNetPlugin : Plugin() {
     private fun nsd(): NsdManager =
         (context.getSystemService(Context.NSD_SERVICE) as NsdManager).also { nsdManager = it }
 
+    /** Non-loopback IPv4 addresses of this device (for display + manual connect). */
+    private fun localIpv4(): List<String> {
+        val out = mutableListOf<String>()
+        try {
+            for (nif in Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!nif.isUp || nif.isLoopback) continue
+                for (addr in Collections.list(nif.inetAddresses)) {
+                    if (addr is Inet4Address && !addr.isLoopbackAddress) addr.hostAddress?.let { out.add(it) }
+                }
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    /** Prefer an IPv4 host address (avoids unroutable IPv6/link-local in ws URLs). */
+    private fun pickHost(si: NsdServiceInfo): String {
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                val list = si.hostAddresses
+                (list.firstOrNull { it is Inet4Address } ?: list.firstOrNull())?.let { return it.hostAddress ?: "" }
+            }
+        } catch (_: Exception) {}
+        @Suppress("DEPRECATION")
+        return si.host?.hostAddress ?: ""
+    }
+
     // ---- Host ----
 
     @PluginMethod
@@ -57,6 +88,9 @@ class LocalNetPlugin : Plugin() {
             val ret = JSObject()
             ret.put("port", port)
             ret.put("name", name)
+            val addrs = JSArray()
+            for (ip in localIpv4()) addrs.put(ip)
+            ret.put("addresses", addrs)
             call.resolve(ret)
         } catch (e: Exception) {
             call.reject("startHost failed: ${e.message}")
@@ -146,7 +180,7 @@ class LocalNetPlugin : Plugin() {
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 val o = JSObject()
                 o.put("name", serviceInfo.serviceName)
-                o.put("host", serviceInfo.host?.hostAddress ?: "")
+                o.put("host", pickHost(serviceInfo))
                 o.put("port", serviceInfo.port)
                 emit("peerFound", o)
                 synchronized(resolveQueue) { resolving = false }

@@ -24,7 +24,7 @@ export interface DiscoveredPeer {
 
 export interface LocalNetPlugin {
   /** Start the host WebSocket server + NSD advertisement. */
-  startHost(opts: { name: string }): Promise<{ port: number; name: string }>;
+  startHost(opts: { name: string }): Promise<{ port: number; name: string; addresses?: string[] }>;
   stopHost(): Promise<void>;
   /** Broadcast a string to the connected follower. */
   send(opts: { data: string }): Promise<void>;
@@ -52,7 +52,7 @@ export class HostTransport implements Transport {
   private openCbs = new Set<() => void>();
   private handles: PluginListenerHandle[] = [];
 
-  async start(name: string): Promise<{ port: number }> {
+  async start(name: string): Promise<{ port: number; addresses?: string[] }> {
     this.handles.push(
       await LocalNet.addListener("message", ({ data }) => {
         try {
@@ -102,7 +102,9 @@ export class WsClientTransport implements Transport {
   private openCbs = new Set<() => void>();
 
   constructor(peer: DiscoveredPeer) {
-    this.ws = new WebSocket(`ws://${peer.host}:${peer.port}`);
+    // Bracket IPv6 (strip any %scope, which ws:// can't use) so the URL is valid.
+    const h = peer.host.includes(":") ? `[${peer.host.replace(/%.*$/, "")}]` : peer.host;
+    this.ws = new WebSocket(`ws://${h}:${peer.port}`);
     this.ws.onopen = () => {
       this.status = "connected";
       this.openCbs.forEach((cb) => cb());

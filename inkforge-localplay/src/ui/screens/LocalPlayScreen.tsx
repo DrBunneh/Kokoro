@@ -36,6 +36,9 @@ export function LocalPlayScreen() {
   const [status, setStatus] = useState("");
   const [peers, setPeers] = useState<DiscoveredPeer[]>([]);
   const [, setTick] = useState(0);
+  const [hostInfo, setHostInfo] = useState<{ port: number; addresses?: string[] } | null>(null);
+  const [manualHost, setManualHost] = useState("");
+  const [manualPort, setManualPort] = useState("");
 
   const transportRef = useRef<HostTransport | WsClientTransport | null>(null);
   const gameRef = useRef<NetGame | null>(null);
@@ -105,7 +108,8 @@ export function LocalPlayScreen() {
       transportRef.current = t;
       wireHost(t);
       t.onOpen(() => setStatus("Opponent connected — syncing…"));
-      await t.start(mine.name);
+      const info = await t.start(mine.name);
+      setHostInfo(info);
       setStatus(`Hosting as "${mine.name}" — waiting for a player to join…`);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Host failed");
@@ -131,11 +135,20 @@ export function LocalPlayScreen() {
 
   function connectTo(peer: DiscoveredPeer) {
     setPhase("connecting");
-    setStatus(`Connecting to ${peer.name}…`);
+    setStatus(`Connecting to ${peer.name} (${peer.host}:${peer.port})…`);
     void LocalNet.stopDiscovery().catch(() => {});
     const t = new WsClientTransport(peer);
     transportRef.current = t;
     wireFollower(t);
+    // Don't hang forever if the host is unreachable.
+    setTimeout(() => {
+      if (!gameRef.current) {
+        t.close();
+        transportRef.current = null;
+        setStatus(`Couldn't reach ${peer.host}:${peer.port}. Try “Connect by IP” with the address shown on the host.`);
+        setPhase("joining");
+      }
+    }, 10000);
   }
 
   if (loaded && decks.length === 0) {
@@ -183,13 +196,24 @@ export function LocalPlayScreen() {
       )}
 
       {phase === "hosting" && (
-        <div className="flex items-center gap-2 text-sm text-slate-300">
-          <span className="h-3 w-3 animate-pulse rounded-full bg-emerald-400" /> Waiting for a player…
+        <div className="space-y-2 text-sm text-slate-300">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 animate-pulse rounded-full bg-emerald-400" /> Waiting for a player…
+          </div>
+          {hostInfo && (hostInfo.addresses?.length ?? 0) > 0 && (
+            <p className="text-xs text-slate-400">
+              If they can't see it (e.g. Bluetooth), have them use <strong>Connect by IP</strong>:
+              <br />
+              {hostInfo.addresses!.map((a) => (
+                <span key={a} className="font-mono text-slate-200">{a}:{hostInfo.port} </span>
+              ))}
+            </p>
+          )}
         </div>
       )}
 
-      {phase === "joining" && (
-        <div className="space-y-2">
+      {(phase === "joining" || phase === "connecting") && (
+        <div className="space-y-3">
           <p className="text-sm text-slate-300">Hosting games found:</p>
           {peers.length === 0 && <p className="text-xs text-slate-500">Searching… make sure the other device tapped “Host”.</p>}
           <ul className="space-y-1">
@@ -201,6 +225,20 @@ export function LocalPlayScreen() {
               </li>
             ))}
           </ul>
+          <div className="space-y-1 rounded-lg border border-white/10 p-2">
+            <p className="text-xs text-slate-400">Connect by IP (for Bluetooth, or if it isn't listed):</p>
+            <div className="flex gap-1">
+              <input value={manualHost} onChange={(e) => setManualHost(e.target.value)} placeholder="192.168.x.x" className="min-w-0 flex-1 rounded bg-white/5 px-2 py-1 text-sm text-slate-100 ring-1 ring-white/10" />
+              <input value={manualPort} onChange={(e) => setManualPort(e.target.value)} placeholder="port" inputMode="numeric" className="w-20 rounded bg-white/5 px-2 py-1 text-sm text-slate-100 ring-1 ring-white/10" />
+              <button
+                disabled={!manualHost.trim() || !manualPort.trim()}
+                onClick={() => connectTo({ name: `${manualHost}:${manualPort}`, host: manualHost.trim(), port: Number(manualPort) })}
+                className="min-h-tap rounded bg-ink-sapphire px-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                Connect
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
