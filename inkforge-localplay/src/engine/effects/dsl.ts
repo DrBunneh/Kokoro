@@ -9,6 +9,7 @@ import { otherPlayer, type CardInstance, type GameState, type PlayerId } from ".
 import { makeLog, type LogEntry } from "../replay";
 import { banishCard, drawCards, findInstance } from "../zones";
 import { effectiveStrength, effectiveWillpower, effectiveLore } from "../keywords";
+import { damagePrevented } from "../continuous";
 import { Rng } from "../rng";
 import { uid } from "@/lib/id";
 import type { CardType } from "@/data/card-types";
@@ -332,6 +333,7 @@ function dynAmount(state: GameState, ctx: EffectContext, base: number | undefine
 
 /** Apply damage to a character, banishing it (and recording so) if it dies. */
 function hit(state: GameState, ctx: EffectContext, t: CardInstance, amount: number, logs: LogEntry[]): void {
+  if (amount > 0 && damagePrevented(state, t, "effect")) return; // Hercules, Lilo - Bundled Up
   t.damage += amount;
   const loc = findInstance(state, t.instanceId);
   if (loc && t.damage >= effectiveWillpower(state, t)) {

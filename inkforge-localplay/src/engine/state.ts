@@ -45,6 +45,8 @@ export interface CardInstance {
   cardsUnder: CardInstance[];
   /** Readied but barred from questing for the rest of this turn (Lilo - Causing an Uproar). */
   questLockedThisTurn?: boolean;
+  /** Used this turn's one-time damage shield (Lilo - Bundled Up "extra layers"). */
+  damageShieldedThisTurn?: boolean;
 }
 
 /** A turn-scoped "pay N less for the next matching play" discount. */

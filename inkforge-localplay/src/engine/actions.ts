@@ -29,6 +29,7 @@ import {
   keywordValue,
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
+import { damagePrevented } from "./continuous";
 import { classifyTrigger, runSteps, targetMatches, scryMatch, handCardMatches, type CardEffects, type Condition, type EffectContext, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
@@ -461,6 +462,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   for (const c of [...p.field, ...p.items, ...p.inkwell]) {
     c.justPlayed = false;
     c.questLockedThisTurn = false;
+    c.damageShieldedThisTurn = false;
     const stoneLocked = p.hand.length >= 3 && c.printed.specialAbilities.some((a) => a.slug === "stonebyday");
     if (!stoneLocked) c.exerted = false;
   }
@@ -830,8 +832,12 @@ export function reduce(
       const defBase = !defenderIsChar ? 0 : hasControllerStatic(next, otherPlayer(next.currentPlayer), "spikesuit") ? effectiveWillpower(next, defender) : effectiveStrength(next, defender);
       const atkStrength = atkBase + keywordValue(next, attacker, "Challenger");
       const defStrength = defBase;
-      const toDefender = Math.max(0, atkStrength - keywordValue(next, defender, "Resist"));
-      const toAttacker = Math.max(0, defStrength - keywordValue(next, attacker, "Resist"));
+      let toDefender = Math.max(0, atkStrength - keywordValue(next, defender, "Resist"));
+      let toAttacker = Math.max(0, defStrength - keywordValue(next, attacker, "Resist"));
+      // Damage-prevention (Hercules - Mighty Leader, Lilo - Bundled Up). The
+      // defender is "being challenged"; the attacker is not.
+      if (defenderIsChar && toDefender > 0 && damagePrevented(next, defender, "defender")) toDefender = 0;
+      if (toAttacker > 0 && damagePrevented(next, attacker, "attacker")) toAttacker = 0;
       defender.damage += toDefender;
       attacker.damage += toAttacker;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_ATTACK", message: `${attacker.printed.fullName} challenged ${defender.printed.fullName}`, cardRefs: [{ id: attacker.printed.id, name: attacker.printed.fullName }, { id: defender.printed.id, name: defender.printed.fullName }] }));

@@ -58,6 +58,39 @@ export interface StaticDef {
   whileControllerHasSubtype?: string;
 }
 
+/**
+ * Would damage be prevented for `target` right now? `kind` distinguishes the
+ * source of the damage so "can't be dealt damage unless challenged" works.
+ * Note: the `extralayers` shield is one-shot per turn, so this mutates the flag
+ * when it consumes the shield — call it only when damage would actually land.
+ */
+export function damagePrevented(state: GameState, target: CardInstance, kind: "effect" | "defender" | "attacker"): boolean {
+  const loc = findInstance(state, target.instanceId);
+  if (!loc || target.printed.type !== "character") return false;
+  const owner = loc.owner;
+  const isDefender = kind === "defender";
+  const has = (slug: string) => target.printed.specialAbilities.some((a) => a.slug === slug);
+  // Hercules - Mighty Leader: can't be dealt damage unless being challenged.
+  if (!isDefender && has("evervigilant")) return true;
+  // Ever Valiant: while exerted, your *other* Hero characters can't be dealt damage unless challenged.
+  if (!isDefender && target.printed.subtypes.some((s) => s.toLowerCase() === "hero")) {
+    if (state.players[owner].field.some((c) => c.instanceId !== target.instanceId && c.exerted && c.printed.specialAbilities.some((a) => a.slug === "evervaliant"))) return true;
+  }
+  // Lilo - Bundled Up: the first damage during an opponent's turn is prevented.
+  if (has("extralayers") && state.currentPlayer !== owner && !target.damageShieldedThisTurn) {
+    target.damageShieldedThisTurn = true;
+    return true;
+  }
+  return false;
+}
+
+/** A controller's "{S} can't be reduced below printed" floor (Elisa "Forever Strong"). */
+export function hasStrengthFloor(state: GameState, card: CardInstance): boolean {
+  const loc = findInstance(state, card.instanceId);
+  if (!loc || card.printed.type !== "character") return false;
+  return state.players[loc.owner].field.some((c) => c.printed.specialAbilities.some((a) => a.slug === "foreverstrong"));
+}
+
 /** Strength excluding continuous mods — used by self-referential static conditions. */
 function rawStrength(card: CardInstance): number {
   return (card.printed.strength ?? 0) + card.appliedEffects.reduce((n, e) => n + (e.strength ?? 0), 0);

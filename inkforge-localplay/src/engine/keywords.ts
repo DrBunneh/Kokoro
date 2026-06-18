@@ -9,7 +9,7 @@
  * play (Snow Fort, Namaari, …). The latter needs the whole game state.
  */
 import type { CardInstance, GameState } from "./state";
-import { statMods } from "./continuous";
+import { statMods, hasStrengthFloor } from "./continuous";
 
 /** Leading keyword name of an ability string, e.g. "Resist +1" → "resist". */
 function keywordName(ability: string): string {
@@ -49,7 +49,9 @@ export function keywordValue(state: GameState, card: CardInstance, name: string)
 export function effectiveStrength(state: GameState, card: CardInstance): number {
   const base = card.printed.strength ?? 0;
   const applied = card.appliedEffects.reduce((n, e) => n + (e.strength ?? 0), 0);
-  return base + applied + statMods(state, card).strength;
+  const value = base + applied + statMods(state, card).strength;
+  // Elisa "Forever Strong": your characters' {S} can't be reduced below printed.
+  return hasStrengthFloor(state, card) ? Math.max(value, base) : value;
 }
 
 export function effectiveWillpower(state: GameState, card: CardInstance): number {
