@@ -1721,6 +1721,19 @@
   "thatdidthetrick": [
     { "trigger": "activated", "when": { "removedDamageThisTurn": true }, "steps": [{ "do": "gainLore", "player": "self", "amount": 1 }] }
   ],
+  "playtimesover": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "banish another character of yours? (each opponent then banishes one)" },
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "optional": true, "text": "banish your character" },
+      { "do": "banish", "to": "t" },
+      { "do": "opponentBanishChoose" }
+    ] }
+  ],
+  "dusktodawn": [
+    { "trigger": "end_of_any_turn", "steps": [{ "do": "discardToHandSize", "size": 2 }] }
+  ],
+  "steadyaim": [],
+  "makinghistory": [],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],

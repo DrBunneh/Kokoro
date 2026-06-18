@@ -42,6 +42,7 @@ export type Trigger =
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
+  | "end_of_any_turn" // at the end of either player's turn (Goliath - Clan Leader)
   | "activated"
   | "cost"; // passive self-cost reduction, evaluated when this card is played
 
@@ -184,6 +185,8 @@ export type Step =
   // Each opponent reveals their top card: cards of `cardType` go to their hand,
   // the rest to the bottom of their deck (Daisy Duck "Big Prize").
   | { do: "opponentTopByType"; cardType: CardType }
+  // Each opponent chooses and banishes one of their own characters (Sid Phillips).
+  | { do: "opponentBanishChoose" }
   // Grant the active player an extra ink this turn (Sail the Azurite Sea):
   | { do: "grantExtraInk"; amount?: number }
   // Move a bound (hand) card into the inkwell / discard:
@@ -229,6 +232,8 @@ export type Step =
   | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; cardName?: string; subtype?: string; keepUpTo?: number; to?: "hand" | "bottom" | "inkwellExerted"; optional?: boolean; text?: string }
   // Draw cards equal to a bound character's strength (Scar - Finally King):
   | { do: "drawByStat"; from: string; stat: "strength" | "willpower" }
+  // The player whose turn is ending discards down to `size` cards (Goliath):
+  | { do: "discardToHandSize"; size: number }
   // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
   | { do: "discardHandDraw"; player?: Who; draw: number }
   // Opponent discards `amount` random cards:
@@ -400,6 +405,16 @@ function hit(state: GameState, ctx: EffectContext, t: CardInstance, amount: numb
   if (amount > 0 && damagePrevented(state, t, "effect")) return; // Hercules, Lilo - Bundled Up
   t.damage += amount;
   const loc = findInstance(state, t.instanceId);
+  // Merida - Formidable Archer "Steady Aim": when one of your actions damages an
+  // opposing character, deal 2 more to it. (The follow-up isn't itself an action,
+  // so it can't re-trigger.)
+  if (
+    amount > 0 && loc && loc.owner !== ctx.controller &&
+    (ctx.source.printed.type === "action" || ctx.source.printed.type === "song") &&
+    state.players[ctx.controller].field.some((c) => c.printed.specialAbilities.some((a) => a.slug === "steadyaim"))
+  ) {
+    t.damage += 2;
+  }
   if (loc && t.damage >= effectiveWillpower(state, t)) {
     banishCard(state.players[loc.owner], t, logs, state.turnNumber);
     ctx.banished?.push({ card: t, owner: loc.owner });
@@ -675,6 +690,23 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "opponentBanishChoose": {
+      const opp = otherPlayer(ctx.controller);
+      if (state.players[opp].field.filter((c) => c.printed.type === "character").length === 0) break;
+      state.pendingPrompts.push({
+        id: uid(),
+        player: opp,
+        controller: opp,
+        sourceInstanceId: ctx.source.instanceId,
+        kind: "banish",
+        text: "Choose a character to banish",
+        auto: false,
+        pick: "character",
+        scope: "ally",
+        resume: { steps: [{ do: "chooseCharacter", as: "b", scope: "ally", text: "banish one of your characters" }, { do: "banish", to: "b" }], vars: {} },
+      });
+      break;
+    }
     case "grantDiscount": {
       (state.players[ctx.controller].discounts ??= []).push({
         amount: step.amount,
@@ -729,6 +761,19 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       if (t) {
         const n = step.stat === "willpower" ? effectiveWillpower(state, t) : effectiveStrength(state, t);
         if (n > 0) { drawCards(state.players[ctx.controller], n); for (let k = 0; k < n; k++) ctx.events?.onDraw?.(ctx.controller); }
+      }
+      break;
+    }
+    case "discardToHandSize": {
+      // The ending player (state.currentPlayer at end of turn) discards down to size.
+      const tp = state.currentPlayer;
+      const excess = state.players[tp].hand.length - step.size;
+      if (excess > 0) {
+        state.pendingPrompts.push({
+          id: uid(), player: tp, controller: tp, sourceInstanceId: ctx.source.instanceId,
+          kind: "discard", text: `Discard down to ${step.size}`, auto: false, pick: "hand", handOwner: tp,
+          resume: { steps: [{ do: "discardChoose", amount: excess }], vars: {} },
+        });
       }
       break;
     }

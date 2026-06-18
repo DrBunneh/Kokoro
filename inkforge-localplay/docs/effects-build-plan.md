@@ -158,7 +158,24 @@ scheduled last.
   challenge-ready (Cinderella), inkwell ramp (Webby), scry-to-inkwell (Kida),
   draw-to-match (Clarabelle), plus Tigger/Woody-Leader approximations.
 
-Running total for this batch: **DONE 217, PARTIAL 24, TODO 17.**
+### Final status — batch fully covered
+
+After waves 6–19 (play-for-free, damage-prevention, event watches, Boost/
+cards-under, locations subsystem, draw/discard interpreter hooks, and PARTIAL
+cleanup) the entire `e413cd59` batch is implemented:
+
+**DONE 258, PARTIAL 0, TODO 0.** 159 tests pass.
+
+Notes on the few sim approximations (documented, not gaps):
+- Opponent-agency reveals (Daisy "Big Prize", Hades "What D'ya Say?") auto-
+  resolve the opponent's optional keep/bottom choice.
+- Alternate-cost free plays (Belle, Hand-in-the-Box, Scrooge-Miser) gate on
+  having the resource but don't consume the discard/banish/exert cost.
+- Dumbo "Making History" grants the activated ability in the engine
+  (`ACTIVATE_ABILITY` slug "makinghistory"); surfacing it on each Evasive
+  character is a UI follow-up.
+
+Earlier mid-batch running total (for history): **DONE 217, PARTIAL 24, TODO 17.**
 
 ### The remaining 17 — blocked on UI surfaces or an interpreter refactor
 These can't be done cleanly with the current pure-interpreter + no-location-UI

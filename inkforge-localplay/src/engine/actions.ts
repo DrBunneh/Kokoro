@@ -1013,6 +1013,22 @@ export function reduce(
       const source = [...p.field, ...p.items].find((c) => c.instanceId === action.cardInstanceId);
       if (!source) throw new GameError("Card not in play");
 
+      // Dumbo "Making History" grants your other Evasive characters
+      // "{E}, 1 {I} — Draw a card and gain 1 lore."
+      if (action.slug === "makinghistory") {
+        if (!hasKeyword(next, source, "Evasive")) throw new GameError("Only Evasive characters have this ability");
+        if (!p.field.some((c) => c.instanceId !== source.instanceId && c.printed.specialAbilities.some((a) => a.slug === "makinghistory"))) throw new GameError("No granting character in play");
+        if (source.exerted) throw new GameError("Source is already exerted");
+        if (source.printed.type === "character" && source.justPlayed) throw new GameError("Character is drying");
+        if (readyInk(p).length < 1) throw new GameError("Not enough ink");
+        source.exerted = true;
+        payInk(p, 1);
+        drawCards(p, 1);
+        p.lore += 1;
+        logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "ABILITY_TRIGGERED", message: `${source.printed.fullName} drew a card and gained 1 lore`, data: { lore: p.lore } }));
+        return { state: next, logs };
+      }
+
       // Boost: "Once during your turn, pay N {I} to put the top card of your deck
       // facedown under this character." (Cheshire Cat, Pete - Ghost.)
       if (action.slug === "boost") {
@@ -1304,6 +1320,9 @@ export function reduce(
       // End-of-turn triggers fire (and resolve) before the turn passes — once.
       if (!next.endStepDone) {
         fireForController(next, "end_of_turn", ending, logs, effects, banished);
+        // "At the end of each player's turn" — fires for both players (Goliath).
+        fireForController(next, "end_of_any_turn", ending, logs, effects, banished);
+        fireForController(next, "end_of_any_turn", otherPlayer(ending), logs, effects, banished);
         drainBanish(next, banished, logs, effects);
         next.endStepDone = true;
         // If one needs resolving, hold the turn; the player resolves then ends again.

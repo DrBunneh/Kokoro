@@ -65,6 +65,17 @@ describe("Wave 2 — DSL steps", () => {
     expect(g.players[1].lore).toBe(3 + 2);
   });
 
+  it("Merida 'steadyaim': an action that damages an enemy deals 2 extra", () => {
+    const action = inst("act", printed({ type: "action" }));
+    const archer = inst("m", printed({ specialAbilities: [{ name: "Steady Aim", slug: "steadyaim", effect: "x" }] }));
+    const enemy = inst("e", printed({ willpower: 10 }));
+    const g = state({ field: [archer] }, { field: [enemy] });
+    // Resolve a 1-damage deal with the action as the effect source.
+    const ctx: EffectContext = { controller: 1, source: action, vars: { t: "e" }, banished: [] };
+    runSteps(g, [{ do: "dealDamage", to: "t", amount: 1 }], ctx, []);
+    expect(enemy.damage).toBe(3); // 1 from the action + 2 from Steady Aim
+  });
+
   it("debuff with untilNextTurn carries an end-of-turn-proof castBy tag", () => {
     const src = inst("s", printed());
     const enemy = inst("e", printed({ strength: 4 }));
