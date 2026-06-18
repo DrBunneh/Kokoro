@@ -22,6 +22,8 @@ export interface StoredReplay {
   victoryReason?: string;
   turnCount: number;
   replay: Replay<GameState>;
+  /** True for replays imported from duels.ink (foreign baseSnapshot shape). */
+  imported?: boolean;
 }
 
 /** One recorded Mulligan decision (feeds Stats §10.2: keep rates OTP/OTD). */

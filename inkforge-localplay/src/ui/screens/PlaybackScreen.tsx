@@ -25,6 +25,8 @@ export function PlaybackScreen() {
   if (!stored || !view) return <p className="text-slate-400">Loading replay…</p>;
   const { state, logs } = view;
   const total = stored.replay.frames.length;
+  // Imported duels.ink replays have a foreign baseSnapshot; render metadata + log only.
+  const players = state.players as GameState["players"] | undefined;
 
   return (
     <div className="flex h-full flex-col gap-2 text-sm">
@@ -33,13 +35,18 @@ export function PlaybackScreen() {
       <div className="grid grid-cols-2 gap-2 text-xs">
         {([1, 2] as PlayerId[]).map((pid) => (
           <div key={pid} className="rounded-lg bg-white/5 p-2">
-            <div className="font-semibold text-slate-100">{state.players[pid].name}</div>
-            <div className="text-slate-400">◊ {state.players[pid].lore} · field {state.players[pid].field.length} · hand {state.players[pid].hand.length}</div>
+            <div className="font-semibold text-slate-100">{stored.playerNames[pid]}</div>
+            <div className="text-slate-400">
+              {players?.[pid]
+                ? `◊ ${players[pid].lore} · field ${players[pid].field.length} · hand ${players[pid].hand.length}`
+                : stored.imported ? "imported" : "—"}
+            </div>
           </div>
         ))}
       </div>
       <div className="text-center text-xs text-slate-400">
-        Turn {state.turnNumber} · {state.status}{state.winner ? ` · winner: ${state.players[state.winner].name}` : ""}
+        Turn {(state as { turnNumber?: number }).turnNumber ?? "?"}
+        {stored.winner ? ` · winner: ${stored.playerNames[stored.winner]}` : ""}
       </div>
 
       {/* Scrubber */}

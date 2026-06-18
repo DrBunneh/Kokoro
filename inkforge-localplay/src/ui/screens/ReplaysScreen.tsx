@@ -1,13 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, type StoredReplay } from "@/state/db";
+import { parseDuelsFile } from "@/data/import-duels";
+import { loadCardDb } from "@/data/cards";
 import { INK_HEX } from "@/ui/components/ink";
 import type { InkColor } from "@/data/card-types";
 
-/** Replays page (spec §10.1): up to 20 recent games, watch or delete. */
+/** Replays page (spec §10.1): up to 20 recent games, watch, delete, or import. */
 export function ReplaysScreen() {
   const navigate = useNavigate();
   const [replays, setReplays] = useState<StoredReplay[]>([]);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function refresh() {
     setReplays(await db.replays.orderBy("createdAt").reverse().limit(20).toArray());
@@ -16,9 +20,34 @@ export function ReplaysScreen() {
     void refresh();
   }, []);
 
+  async function onFile(file: File) {
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const index = await loadCardDb().catch(() => undefined);
+      const games = parseDuelsFile(buf, file.name, index);
+      if (games.length === 0) throw new Error("No games found in file");
+      await db.replays.bulkPut(games);
+      setImportMsg(`Imported ${games.length} game${games.length > 1 ? "s" : ""}.`);
+      void refresh();
+    } catch (err) {
+      setImportMsg(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   return (
     <div className="space-y-2">
-      <h1 className="text-xl font-semibold text-slate-100">Replays</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-slate-100">Replays</h1>
+        <button onClick={() => fileRef.current?.click()} className="min-h-tap rounded-lg bg-white/10 px-3 text-sm">Upload file</button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".gz,.zip,.json"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = ""; }}
+        />
+      </div>
+      {importMsg && <p className="text-xs text-emerald-300">{importMsg}</p>}
       {replays.length === 0 && <p className="pt-6 text-center text-sm text-slate-400">No games recorded yet. Finish a hot-seat game to see it here.</p>}
       <ul className="space-y-2">
         {replays.map((r) => {
