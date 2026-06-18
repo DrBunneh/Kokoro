@@ -367,6 +367,20 @@ export function reduce(
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
       fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, false);
+      // Support (rules §10.13): add this character's {S} to another chosen one.
+      if (hasKeyword(card, "Support")) {
+        const amount = effectiveStrength(card);
+        next.pendingPrompts.push({
+          id: uid(),
+          player: next.currentPlayer,
+          sourceInstanceId: card.instanceId,
+          kind: "support",
+          text: `Support — add +${amount} ¤ to another chosen character this turn.`,
+          auto: false,
+          controller: next.currentPlayer,
+          effect: { trigger: "on_quest", effects: [{ op: "buff", target: "chosen_ally", strength: amount, duration: "end_of_turn" }] },
+        });
+      }
       return { state: next, logs };
     }
 

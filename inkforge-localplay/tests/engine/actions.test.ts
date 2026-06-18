@@ -280,6 +280,36 @@ describe("challenge (ATTACK)", () => {
   });
 });
 
+describe("Support keyword", () => {
+  it("on quest, pushes a choice prompt that buffs a chosen ally's strength", () => {
+    // All P1 cards have Support so the opening hand reliably has one.
+    const supportLookup: CardLookup = (id) => printed(id, { abilities: id.includes("-a") ? [{ ability: "Support" }] : [], strength: 2 });
+    let g = newGame("sup", deckOf(60, "a"), deckOf(60, "b"), supportLookup);
+    g = reduce(g, { type: "CHOOSE_STARTING_PLAYER", player: 1 }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 1, cardInstanceIds: [] }).state;
+    g = reduce(g, { type: "MULLIGAN", player: 2, cardInstanceIds: [] }).state;
+
+    // Play two supporters, dry them over a full turn cycle.
+    const a = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[2]!.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: a }).state;
+    g = reduce(g, { type: "END_TURN" }).state; // P2
+    g = reduce(g, { type: "END_TURN" }).state; // P1, a is ready
+    const b = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: b }).state; // b drying
+
+    g = reduce(g, { type: "QUEST", cardInstanceId: a }).state;
+    expect(g.pendingPrompts).toHaveLength(1);
+    expect(g.pendingPrompts[0]!.kind).toBe("support");
+
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: b }).state;
+    const buffed = g.players[1].field.find((c) => c.instanceId === b)!;
+    expect(buffed.appliedEffects.some((e) => e.strength === 2)).toBe(true);
+    expect(g.pendingPrompts).toHaveLength(0);
+  });
+});
+
 describe("applyAction framing", () => {
   const script: Action[] = [
     { type: "CHOOSE_STARTING_PLAYER", player: 1 },
