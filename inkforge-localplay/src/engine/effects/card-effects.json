@@ -1970,5 +1970,37 @@
   "imperialinvitation": [{ "trigger": "on_quest", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Princess" } }] }],
   "nowmychance": [{ "trigger": "activated", "steps": [{ "do": "discardChoose", "amount": 1, "text": "discard a card" }, { "do": "grantKeyword", "to": "self", "keyword": "Challenger", "value": 3, "duration": "end_of_turn" }] }],
 
+  "showinup": [{ "trigger": "cost", "reduce": 1, "when": { "haveCharacterNamed": "Tod" } }],
+  "quickonhisfeet": [{ "trigger": "on_play_action", "steps": [{ "do": "grantKeyword", "to": "self", "keyword": "Evasive", "duration": "untilNextTurn" }] }],
+  "instaarmor": [{ "trigger": "on_item_banished", "steps": [{ "do": "grantKeyword", "to": "self", "keyword": "Resist", "value": 1, "duration": "untilNextTurn" }] }],
+  "takethat": [{ "trigger": "on_item_banished", "steps": [{ "do": "mayConfirm", "text": "pay 1 {I}: deal 2 damage to a chosen character?" }, { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "deal 2 damage" }, { "do": "dealDamage", "to": "t", "amount": 2 }] }],
+  "lookintoyourpast": [{ "trigger": "on_put_under", "steps": [{ "do": "mayConfirm", "text": "put a card from your discard into your inkwell?" }, { "do": "returnFromDiscard", "keepUpTo": 1, "to": "inkwellExerted", "optional": true, "text": "into inkwell" }] }],
+  "anythingthatglitters": [{ "trigger": "on_any_put_under", "steps": [{ "do": "buff", "to": "self", "lore": 1, "duration": "end_of_turn" }] }],
+  "holidayspirit": [{ "trigger": "on_any_put_under", "oncePerTurn": true, "steps": [{ "do": "putTopUnder", "to": "self" }] }],
+  "moretoexplore": [{ "trigger": "on_quest", "steps": [{ "do": "buffAll", "scope": "ally", "keywordFilter": "Evasive", "lore": 1, "duration": "end_of_turn" }] }],
+  "endlesswinter": [
+    { "trigger": "on_play", "steps": [{ "do": "mayConfirm", "text": "exert a character with 3 {S} or less?" }, { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "filter": { "maxStrength": 3 }, "text": "exert" }, { "do": "exert", "to": "t" }] },
+    { "trigger": "on_play_location", "steps": [{ "do": "mayConfirm", "text": "exert a character with 3 {S} or less?" }, { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "filter": { "maxStrength": 3 }, "text": "exert" }, { "do": "exert", "to": "t" }] }
+  ],
+  "amotherslove": [{ "trigger": "on_play", "steps": [{ "do": "mayConfirm", "text": "put the top card under this character and draw?" }, { "do": "putTopUnder", "to": "self" }, { "do": "draw", "player": "self", "amount": 1 }] }],
+  "spreadingjoy": [{ "trigger": "on_play", "steps": [{ "do": "mayConfirm", "text": "put a card under each other character (they gain Ward)?" }, { "do": "putTopUnderEachOther" }, { "do": "buffAll", "scope": "ally", "excludeSelf": true, "keyword": "Ward", "duration": "untilNextTurn" }] }],
+  "weakenthecauldron": [{ "trigger": "on_play", "steps": [{ "do": "discardToBottom", "player": "opponent", "amount": 2 }] }],
+  "unexpecteddiscovery": [{ "trigger": "on_play", "steps": [{ "do": "mayConfirm", "text": "put a card from an opponent's discard on the bottom?" }, { "do": "discardToBottom", "player": "opponent", "amount": 1 }] }],
+  "hiddendepths": [{ "trigger": "on_play", "when": { "haveCharacterNamed": "Anna" }, "steps": [{ "do": "discardToBottom", "player": "opponent", "amount": 1 }] }],
+  "andthen": [{ "trigger": "on_inkwell_added", "oncePerTurn": true, "steps": [{ "do": "scryTopOrBottom", "count": 1, "text": "top or bottom" }] }],
+  "newarrival": [{ "trigger": "on_move_here", "steps": [{ "do": "putTopUnder", "to": "self" }] }],
+  "persistentproblem": [{ "trigger": "on_banish", "steps": [{ "do": "returnSelfToHand" }] }],
+  "thecoldneverbotheredme": [{ "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "discard", "optional": true, "filter": { "cardType": "location" } }, { "do": "grantDiscount", "amount": 3, "cardType": "location", "uses": 1 }] }],
+  "educationorelimination": [{ "trigger": "on_play", "steps": [{ "do": "modal", "options": [
+    { "label": "Draw + buff a character", "steps": [{ "do": "draw", "player": "self", "amount": 1 }, { "do": "chooseCharacter", "as": "t", "scope": "ally", "text": "+1 {L} and Evasive" }, { "do": "buff", "to": "t", "lore": 1, "duration": "untilNextTurn" }, { "do": "grantKeyword", "to": "t", "keyword": "Evasive", "duration": "untilNextTurn" }] },
+    { "label": "Banish a damaged character", "steps": [{ "do": "chooseCharacter", "as": "t", "scope": "any", "filter": { "damaged": true }, "text": "banish" }, { "do": "banish", "to": "t" }] }
+  ] }] }],
+  "freezethevine": [{ "trigger": "on_play", "steps": [{ "do": "banishLocations" }, { "do": "draw", "player": "self", "amount": 2 }, { "do": "discardChoose", "amount": 1, "text": "discard a card" }] }],
+  "marchingofftobattle": [{ "trigger": "on_play", "when": { "anyBanishedThisTurn": true }, "steps": [{ "do": "draw", "player": "self", "amount": 2 }] }],
+  "doyouwanttobuildasnowman": [{ "trigger": "on_play", "steps": [{ "do": "gainLore", "player": "self", "amount": 3 }] }],
+  "breakthrough": [{ "trigger": "activated", "steps": [{ "do": "chooseCharacter", "as": "t", "scope": "enemy", "includeLocations": true, "text": "banish a location" }, { "do": "banish", "to": "t" }] }],
+  "royalsummons": [{ "trigger": "start_of_turn", "steps": [{ "do": "mayConfirm", "text": "discard a Princess/Queen to return a character from your discard?" }, { "do": "discardChoose", "amount": 1, "text": "discard a card" }, { "do": "returnFromDiscard", "cardType": "character", "keepUpTo": 1, "optional": true, "text": "return a character" }] }],
+  "electricmove": [{ "trigger": "on_play", "when": { "playedType": "song" }, "steps": [{ "do": "grantKeyword", "to": "self", "keyword": "Rush", "duration": "end_of_turn" }] }],
+
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

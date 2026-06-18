@@ -419,6 +419,8 @@ function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], eff
     }
     if (card.printed.type === "character") (state.banishedNamesThisTurn ??= []).push(card.printed.name);
     state.anyBanishedThisTurn = true;
+    // "Whenever an item is banished during your turn" (Darkwing - Darkwarrior / Cool).
+    if (card.printed.type === "item") fireWatch(state, "on_item_banished", state.currentPlayer, logs, effects, queue);
     fireTrigger(state, "on_banish", card, owner, logs, effects, true, queue);
     // "Whenever a character is banished while here" (The Library).
     if (card.atLocation) {
@@ -883,7 +885,7 @@ export function reduce(
         recordPlay(p, card);
         fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
         // The shifted-over card is now under the new one (Cheshire "it's loads of fun").
-        if (card.cardsUnder.length > 0) fireTrigger(next, "on_put_under", card, next.currentPlayer, logs, effects, true, banished);
+        if (card.cardsUnder.length > 0) { fireTrigger(next, "on_put_under", card, next.currentPlayer, logs, effects, true, banished); fireWatch(next, "on_any_put_under", next.currentPlayer, logs, effects, banished); }
         drainBanish(next, banished, logs, effects);
         return { state: next, logs };
       }
@@ -958,6 +960,7 @@ export function reduce(
       if (card.printed.type === "action" || card.printed.type === "song") fireForController(next, "on_play_action", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "song") fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "character") fireForController(next, "on_play_character", next.currentPlayer, logs, effects, banished, card.instanceId);
+      if (card.printed.type === "location") fireForController(next, "on_play_location", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "item") {
         // Item watchers (e.g. Maurice's Workshop) sit in the items zone, not the field.
         for (const w of [...next.players[next.currentPlayer].field, ...next.players[next.currentPlayer].items]) {
@@ -1095,6 +1098,7 @@ export function reduce(
           source.cardsUnder.push(top);
           logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "ABILITY_TRIGGERED", message: `${p.name} boosted ${source.printed.fullName}`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
           fireTrigger(next, "on_put_under", source, next.currentPlayer, logs, effects, true, banished);
+          fireWatch(next, "on_any_put_under", next.currentPlayer, logs, effects, banished);
         }
         drainBanish(next, banished, logs, effects);
         return { state: next, logs };

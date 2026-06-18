@@ -28,6 +28,8 @@ export type Trigger =
   | "on_play_song" // whenever you play a song specifically
   | "on_play_character" // whenever you play a character (for your other cards)
   | "on_play_item" // whenever you play an item (for your other cards)
+  | "on_play_location" // whenever you play a location (for your other cards)
+  | "on_any_put_under" // whenever you put a card under one of your cards (controller-wide)
   | "on_play_cheap" // whenever you pay 2 {I} or less to play a card (for your other cards)
   | "on_challenge_banish" // when this character banishes another in a challenge
   | "on_other_banished" // whenever any character is banished (controller-wide watch)
@@ -191,7 +193,7 @@ export type Step =
   // Scry: reveal the top `count` of your deck, keep up to `keepUpTo` (default 1,
   // optionally filtered) in hand, send the rest to the bottom or inkwell. When
   // `optional`, the player may keep none.
-  | { do: "lookAtTop"; count: number; countFromUnder?: boolean; rest?: "bottom" | "inkwellExerted"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
+  | { do: "lookAtTop"; count: number; countFromUnder?: boolean; rest?: "bottom" | "inkwellExerted" | "discard"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
   // Banish every character (Be Prepared) — or a scoped subset, optionally
   // limited to damaged characters or those at/under a strength (Prince Phillip / Sisu).
   | { do: "banishAll"; scope?: Scope; damaged?: boolean; maxStrength?: number }
@@ -239,7 +241,7 @@ export type Step =
   // Stats (until end of turn unless duration given):
   | { do: "buff" | "debuff"; to: string; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; amountPer?: AmountPer }
   // Area stat change to every character in scope (optionally excluding the source):
-  | { do: "buffAll" | "debuffAll"; scope?: Scope; subtype?: string; strength?: number; willpower?: number; lore?: number; keyword?: string; keywordValue?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; excludeSelf?: boolean }
+  | { do: "buffAll" | "debuffAll"; scope?: Scope; subtype?: string; keywordFilter?: string; strength?: number; willpower?: number; lore?: number; keyword?: string; keywordValue?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; excludeSelf?: boolean }
   | { do: "ready" | "exert"; to: string }
   // Bar a bound character from questing for the rest of this turn (Lilo - Uproar):
   | { do: "lockQuest"; to: string }
@@ -293,6 +295,12 @@ export type Step =
   | { do: "cardsUnderToHand"; from: string }
   // Remove up to `amount` damage from every character in scope (Piglet - Cocoa Maker):
   | { do: "removeDamageAll"; scope?: Scope; amount: number }
+  // Put up to `amount` cards from a player's discard on the bottom of their deck (Taran, Anna):
+  | { do: "discardToBottom"; player?: Who; amount: number }
+  // Put the top card under each of the controller's other characters (Scrooge - Reformed):
+  | { do: "putTopUnderEachOther" }
+  // Banish all locations in play (Freeze the Vine):
+  | { do: "banishLocations" }
   // Look at the top `count`, put each on the top or bottom of your deck (Dr. Sara Bellum):
   | { do: "scryTopOrBottom"; count: number; text?: string }
   // Look at the top `count`, put the chosen one into your inkwell (exerted), rest
@@ -579,6 +587,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) {
         if (step.excludeSelf && t.instanceId === ctx.source.instanceId) continue;
         if (step.subtype && !t.printed.subtypes.some((st) => st.toLowerCase() === step.subtype!.toLowerCase())) continue;
+        if (step.keywordFilter && !(t.printed.abilities.some((a) => a.ability.toLowerCase().startsWith(step.keywordFilter!.toLowerCase())) || t.appliedEffects.some((e) => e.keyword?.toLowerCase() === step.keywordFilter!.toLowerCase()))) continue;
         t.appliedEffects.push({
           source: ctx.source.instanceId,
           strength: step.strength != null ? s * step.strength : undefined,
@@ -895,6 +904,33 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       if (t && top) t.cardsUnder.push(top);
       break;
     }
+    case "putTopUnderEachOther": {
+      const p = state.players[ctx.controller];
+      for (const c of p.field) {
+        if (c.printed.type !== "character" || c.instanceId === ctx.source.instanceId) continue;
+        const top = p.deck.shift();
+        if (!top) break;
+        c.cardsUnder.push(top);
+      }
+      break;
+    }
+    case "discardToBottom": {
+      const pid = step.player === "self" ? ctx.controller : otherPlayer(ctx.controller);
+      const pl = state.players[pid];
+      for (let k = 0; k < step.amount && pl.discard.length > 0; k++) {
+        const c = pl.discard.shift()!;
+        c.damage = 0; c.exerted = false; c.justPlayed = false; c.appliedEffects = [];
+        pl.deck.push(c);
+      }
+      break;
+    }
+    case "banishLocations": {
+      for (const pid of [1, 2] as PlayerId[]) {
+        const locs = state.players[pid].field.filter((c) => c.printed.type === "location");
+        for (const loc of locs) { banishCard(state.players[pid], loc, logs, state.turnNumber); ctx.banished?.push({ card: loc, owner: pid }); }
+      }
+      break;
+    }
     case "cardsUnderToHand": {
       const t = resolveTarget(state, ctx, step.from);
       if (t && t.cardsUnder.length > 0) {
@@ -1181,6 +1217,8 @@ export function runSteps(
         const rest = p.deck.splice(0, Math.max(0, windowLen));
         if ((step.rest ?? "bottom") === "inkwellExerted") {
           for (const c of rest) { c.exerted = true; c.justPlayed = true; p.inkwell.push(c); }
+        } else if (step.rest === "discard") {
+          for (const c of rest) { p.discard.push(c); p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1; }
         } else {
           p.deck.push(...rest); // to the bottom, in revealed order
         }

@@ -47,6 +47,8 @@ export interface StaticDef {
   whileExerted?: boolean;
   /** Only during the opponents' turns (Snow Fort "Barricade"). */
   onlyOpponentTurn?: boolean;
+  /** Only during the controller's own turn (Jasmine - Fearless Princess). */
+  onlyOwnTurn?: boolean;
   /** Only while the source's (raw) strength is at least this (Lady "Take the Lead"). */
   whileSelfStrengthAtLeast?: number;
   /** Only while the controller holds no cards (Angel - Experiment 624). */
@@ -75,6 +77,8 @@ export interface StaticDef {
   whileAtLocation?: boolean;
   /** Only while the controller has a character with this keyword in play (Roxanne, Timothy). */
   whileControllerHasKeyword?: string;
+  /** Only while the controller holds at least N cards (Tinker Bell - Snowflake Collector). */
+  whileHandAtLeast?: number;
 }
 
 /**
@@ -205,6 +209,7 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
       for (const def of STATICS[sa.slug] ?? []) {
         if (def.whileExerted && !src.exerted) continue;
         if (def.onlyOpponentTurn && state.currentPlayer === srcOwner) continue;
+        if (def.onlyOwnTurn && state.currentPlayer !== srcOwner) continue;
         if (def.whileSelfStrengthAtLeast != null && rawStrength(src) < def.whileSelfStrengthAtLeast) continue;
         if (def.whileNoHand && state.players[srcOwner].hand.length > 0) continue;
         if (def.whileSelfUndamaged && src.damage > 0) continue;
@@ -223,6 +228,7 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
         if (def.whileDiscardedThisTurnAtLeast != null && (state.currentPlayer !== srcOwner || (state.players[srcOwner].discardedThisTurn ?? 0) < def.whileDiscardedThisTurnAtLeast)) continue;
         if (def.whileAtLocation && !src.atLocation) continue;
         if (def.whileControllerHasKeyword && !state.players[srcOwner].field.some((c) => c.printed.type === "character" && targetHasPrintedKeyword(c, def.whileControllerHasKeyword!))) continue;
+        if (def.whileHandAtLeast != null && state.players[srcOwner].hand.length < def.whileHandAtLeast) continue;
         if (def.targetHasKeyword && !targetHasPrintedKeyword(card, def.targetHasKeyword)) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
         const scale = def.perDiscard
