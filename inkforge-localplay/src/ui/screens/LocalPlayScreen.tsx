@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useDecks } from "@/state/useDecks";
 import { useCardDb } from "@/ui/hooks/useCardDb";
-import { CardThumb } from "@/ui/components/CardThumb";
+import { CardThumb, CardZoom } from "@/ui/components/CardThumb";
+import { useCardGesture } from "@/ui/hooks/useCardGesture";
 import {
   HostTransport,
   WsClientTransport,
@@ -276,6 +278,8 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
   const [selItem, setSelItem] = useState<string | null>(null);
   const [attacker, setAttacker] = useState<string | null>(null);
   const [manualSel, setManualSel] = useState<string | null>(null);
+  const [drag, setDrag] = useState<{ card: CardInstance; x: number; y: number } | null>(null);
+  const [zoomCard, setZoomCard] = useState<CardInstance["printed"] | null>(null);
   const s = game.state;
   const opp: PlayerId = viewer === 1 ? 2 : 1;
   const me = s.players[viewer];
@@ -284,6 +288,18 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
   if (!index) return <p className="text-slate-400">Loading…</p>;
 
   const act = (a: Parameters<NetGame["localAction"]>[0]) => game.localAction(a);
+  const dropCard = (c: CardInstance, x: number, y: number) => {
+    setDrag(null);
+    if (!myTurn) return;
+    const zone = document.elementFromPoint(x, y)?.closest("[data-drop]")?.getAttribute("data-drop");
+    if (zone === "ink") { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSel(null); }
+    else if (zone === "play") { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSel(null); }
+  };
+  const dragControls: NetDragControls = {
+    start: (c, x, y) => setDrag({ card: c, x, y }),
+    move: (x, y) => setDrag((d) => (d ? { ...d, x, y } : d)),
+    end: dropCard,
+  };
 
   if (s.status === "coin_toss") {
     return (
@@ -355,24 +371,28 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
 
       <div className="flex-1" />
 
-      {/* Me: board → items → inkwell. */}
-      <NetField
-        cards={me.field}
-        selectedId={attacker ?? selField}
-        onTap={(c) => {
-          if (promptTap(c.instanceId)) return;
-          if (attacker) { setAttacker(null); return; }
-          if (!myTurn) return;
-          setSel(null); setSelItem(null);
-          setSelField((x) => (x === c.instanceId ? null : c.instanceId));
-        }}
-      />
-      <ItemRow
-        items={me.items}
-        selectedId={selItem}
-        onItemTap={(c) => { if (promptTap(c.instanceId)) return; if (!myTurn) return; setSelField(null); setSelItem((x) => (x === c.instanceId ? null : c.instanceId)); }}
-      />
-      <InkPool player={me} mine />
+      {/* Me: board → items → inkwell. Both are drop targets while dragging. */}
+      <div data-drop="play" className={cn("rounded", drag && "ring-2 ring-emerald-400/60")}>
+        <NetField
+          cards={me.field}
+          selectedId={attacker ?? selField}
+          onTap={(c) => {
+            if (promptTap(c.instanceId)) return;
+            if (attacker) { setAttacker(null); return; }
+            if (!myTurn) return;
+            setSel(null); setSelItem(null);
+            setSelField((x) => (x === c.instanceId ? null : c.instanceId));
+          }}
+        />
+        <ItemRow
+          items={me.items}
+          selectedId={selItem}
+          onItemTap={(c) => { if (promptTap(c.instanceId)) return; if (!myTurn) return; setSelField(null); setSelItem((x) => (x === c.instanceId ? null : c.instanceId)); }}
+        />
+      </div>
+      <div data-drop="ink" className={cn("rounded", drag && !s.hasInkedThisTurn && "ring-2 ring-sky-400/60")}>
+        <InkPool player={me} mine />
+      </div>
 
       {prompt && <NetPrompt state={s} prompt={prompt} mine={myPrompt} manualSel={manualSel} dispatch={act} onClearManualSel={() => setManualSel(null)} />}
 
@@ -391,27 +411,24 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
       {attacker && <p className="text-center text-xs text-amber-200">Tap an enemy character to challenge, or tap your attacker again to cancel.</p>}
 
       <div className="flex items-end gap-1 overflow-x-auto rounded bg-white/5 p-1">
-        {me.hand.map((c) => {
-          const shiftCost = keywordValue(s, c, "Shift");
-          const shiftBase = shiftCost > 0 ? me.field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
-          const singers = c.printed.type === "song" ? greedySingers(c.printed.cost) : [];
-          return (
-            <div key={c.instanceId} className="shrink-0">
-              <button
-                onClick={() => { setSelField(null); setSelItem(null); setSel((x) => (x === c.instanceId ? null : c.instanceId)); }}
-                className={cn("block w-14 rounded", sel === c.instanceId && "ring-2 ring-ink-sapphire")}
-              ><CardThumb card={c.printed} /></button>
-              {sel === c.instanceId && myTurn && !prompt && (
-                <div className="mt-0.5 flex flex-wrap gap-0.5">
-                  <button disabled={(s.hasInkedThisTurn && me.extraInk <= 0) || !c.printed.inkable} onClick={() => { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-white/10 text-[10px] disabled:opacity-30">Ink</button>
-                  <button disabled={readyInk < c.printed.cost} onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSel(null); }} className="flex-1 rounded bg-ink-sapphire text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
-                  {shiftBase && readyInk >= shiftCost && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: shiftBase.instanceId }); setSel(null); }} className="flex-1 rounded bg-ink-amethyst/70 text-[10px] text-white">Shift {shiftCost}</button>}
-                  {singers.length > 0 && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, singers }); setSel(null); }} className="flex-1 rounded bg-ink-emerald/70 text-[10px] text-white">Sing</button>}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {me.hand.map((c) => (
+          <NetHandCard
+            key={c.instanceId}
+            c={c}
+            s={s}
+            field={me.field}
+            selected={sel === c.instanceId}
+            active={myTurn && !prompt}
+            readyInk={readyInk}
+            canInk={(!s.hasInkedThisTurn || me.extraInk > 0)}
+            singers={c.printed.type === "song" ? greedySingers(c.printed.cost) : []}
+            onSelect={() => { setSelField(null); setSelItem(null); setSel((x) => (x === c.instanceId ? null : c.instanceId)); }}
+            onZoom={() => setZoomCard(c.printed)}
+            dragControls={dragControls}
+            act={act}
+            clearSel={() => setSel(null)}
+          />
+        ))}
       </div>
       <ConnLog />
       <div className="flex gap-1">
@@ -419,6 +436,62 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
         <button onClick={() => act({ type: "GAME_FINISH", winner: opp, reason: "concession" })} className="min-h-tap flex-1 rounded bg-rose-500/20 text-xs text-rose-200">Concede</button>
         <button onClick={onLeave} className="min-h-tap flex-1 rounded bg-white/10 text-xs">Leave</button>
       </div>
+
+      {drag && createPortal(
+        <div className="pointer-events-none fixed z-[90] w-14 -translate-x-1/2 -translate-y-[120%] opacity-90" style={{ left: drag.x, top: drag.y }}>
+          <CardThumb card={drag.card.printed} zoomable={false} />
+        </div>,
+        document.body,
+      )}
+      {zoomCard && <CardZoom card={zoomCard} onClose={() => setZoomCard(null)} />}
+    </div>
+  );
+}
+
+interface NetDragControls {
+  start: (c: CardInstance, x: number, y: number) => void;
+  move: (x: number, y: number) => void;
+  end: (c: CardInstance, x: number, y: number) => void;
+}
+
+/** A networked hand card: tap to select, hold to zoom, drag onto a zone. */
+function NetHandCard({ c, s, field, selected, active, readyInk, canInk, singers, onSelect, onZoom, dragControls, act, clearSel }: {
+  c: CardInstance;
+  s: GameState;
+  field: CardInstance[];
+  selected: boolean;
+  active: boolean;
+  readyInk: number;
+  canInk: boolean;
+  singers: string[];
+  onSelect: () => void;
+  onZoom: () => void;
+  dragControls: NetDragControls;
+  act: (a: Parameters<NetGame["localAction"]>[0]) => void;
+  clearSel: () => void;
+}) {
+  const shiftCost = keywordValue(s, c, "Shift");
+  const shiftBase = shiftCost > 0 ? field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
+  const gesture = useCardGesture({
+    onTap: onSelect,
+    onLongPress: onZoom,
+    onDragStart: (x, y) => dragControls.start(c, x, y),
+    onDragMove: dragControls.move,
+    onDragEnd: (x, y) => dragControls.end(c, x, y),
+  });
+  return (
+    <div className="shrink-0">
+      <div {...gesture} className={cn("block w-14 touch-none rounded", selected && "ring-2 ring-ink-sapphire")}>
+        <CardThumb card={c.printed} zoomable={false} />
+      </div>
+      {selected && active && (
+        <div className="mt-0.5 flex flex-wrap gap-0.5">
+          <button disabled={!canInk || !c.printed.inkable} onClick={() => { act({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); clearSel(); }} className="flex-1 rounded bg-white/10 text-[10px] disabled:opacity-30">Ink</button>
+          <button disabled={readyInk < c.printed.cost} onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); clearSel(); }} className="flex-1 rounded bg-ink-sapphire text-[10px] text-white disabled:opacity-30">Play {c.printed.cost}</button>
+          {shiftBase && readyInk >= shiftCost && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: shiftBase.instanceId }); clearSel(); }} className="flex-1 rounded bg-ink-amethyst/70 text-[10px] text-white">Shift {shiftCost}</button>}
+          {singers.length > 0 && <button onClick={() => { act({ type: "PLAY_CARD", cardInstanceId: c.instanceId, singers }); clearSel(); }} className="flex-1 rounded bg-ink-emerald/70 text-[10px] text-white">Sing</button>}
+        </div>
+      )}
     </div>
   );
 }
