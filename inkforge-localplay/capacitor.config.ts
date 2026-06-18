@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.inkforge.localplay",
-  appName: "InkForge LocalPlay",
+  appName: "Inkwell",
   webDir: "dist",
   android: {
     // The app is served over https://localhost, so the follower's plain

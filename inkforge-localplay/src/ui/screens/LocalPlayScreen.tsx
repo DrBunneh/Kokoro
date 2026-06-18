@@ -345,6 +345,9 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
   return (
     <div className="flex h-full flex-col gap-2 text-sm">
       <div className="rounded bg-white/5 px-2 py-1 text-xs">{them.name} — ◊{them.lore} ✋{them.hand.length} 🂠{them.deck.length}</div>
+      {s.lockout && s.lockout.caster !== viewer && myTurn && (
+        <div className="rounded bg-rose-500/20 px-2 py-1 text-center text-xs text-rose-100">🔒 You can't play {s.lockout.items ? "actions or items" : "actions"} this turn</div>
+      )}
       {/* Opponent: board → items → inkwell (nearest the centre). */}
       <NetField cards={them.field} enemy targeting={!!attacker || myPrompt} onTap={(c) => { if (promptTap(c.instanceId)) return; if (attacker) { act({ type: "ATTACK", attackerId: attacker, defenderId: c.instanceId }); setAttacker(null); } }} />
       <ItemRow items={them.items} enemy onItemTap={(c) => promptTap(c.instanceId)} />

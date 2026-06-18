@@ -9,25 +9,21 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: {
-        name: "InkForge LocalPlay",
-        short_name: "LocalPlay",
+        name: "Inkwell",
+        short_name: "Inkwell",
         description: "Offline Lorcana duel simulator",
         theme_color: "#0b1020",
         background_color: "#0b1020",
         display: "standalone",
         orientation: "any",
         start_url: "/",
-        icons: [
-          { src: "/brand/inkforge-icon.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/brand/inkforge-icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/brand/inkforge-icon.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
+        icons: [],
       },
       workbox: {
         // App shell precache; image runtime caching keyed on the (configurable)
         // image host so a missing/blocked host degrades to placeholders rather
         // than failing the SW install (spec §5.2).
-        globPatterns: ["**/*.{js,css,html,woff2}", "brand/*.png"],
+        globPatterns: ["**/*.{js,css,html,woff2}"],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/[^/]*duels\.ink\/.*\.webp$/,

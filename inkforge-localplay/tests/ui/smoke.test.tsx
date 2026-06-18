@@ -31,7 +31,7 @@ function renderAt(path: string) {
 describe("UI smoke (jsdom + fake-indexeddb)", () => {
   it("renders the main menu with all four tiles", () => {
     renderAt("/");
-    expect(screen.getByText("LocalPlay")).toBeDefined();
+    expect(screen.getByText("Inkwell")).toBeDefined();
     for (const label of ["Decks", "Play", "Stats", "Replays"]) {
       expect(screen.getByRole("button", { name: label })).toBeDefined();
     }

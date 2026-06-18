@@ -248,6 +248,11 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
   return (
     <div className="flex h-full flex-col gap-2 text-sm">
       <ErrorToast />
+      {state.lockout && state.lockout.caster !== me && (
+        <div className="rounded-lg bg-rose-500/20 px-2 py-1 text-center text-xs text-rose-100">
+          🔒 You can't play {state.lockout.items ? "actions or items" : "actions"} this turn (opponent's effect)
+        </div>
+      )}
       {/* Opponent */}
       <div className="flex items-center justify-between rounded-lg bg-white/5 px-2 py-1 text-xs text-slate-300">
         <span className="font-semibold">{oppP.name}</span>

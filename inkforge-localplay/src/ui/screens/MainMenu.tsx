@@ -15,13 +15,7 @@ export function MainMenu() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-1 flex-col items-center justify-center py-8">
-        <img
-          src="/brand/inkforge-wordmark.png"
-          alt="InkForge"
-          className="w-64 max-w-[80%] select-none"
-          draggable={false}
-        />
-        <p className="mt-2 text-sm font-semibold tracking-wide text-slate-300">LocalPlay</p>
+        <div className="text-4xl font-bold tracking-tight text-slate-100">Inkwell</div>
         <p className="mt-1 text-xs text-slate-500">Offline Lorcana duel simulator</p>
       </div>
       <div className="grid grid-cols-2 gap-3 pb-6">
