@@ -435,6 +435,48 @@ describe("Effect DSL + the bag", () => {
     expect(source.appliedEffects.some((e) => e.strength === 3)).toBe(false);
   });
 
+  it("forced discard: caster picks a filtered card from the opponent's hand", () => {
+    const effects: CardEffects = {
+      mindrot: [{ trigger: "on_play", steps: [
+        { do: "chooseFromHand", as: "d", from: "opponent", excludeCardType: "character", optional: true },
+        { do: "discardCard", from: "d" },
+      ] }],
+    };
+    let g = toPlay(lookupP1Ability("Mindrot", "mindrot", "Opponent discards a non-character of your choice."));
+    // Put a known character + a known action in P2's hand.
+    const char = { instanceId: "ohchar", printed: printed("ohchar", { type: "character" }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    const action = { instanceId: "ohact", printed: printed("ohact", { type: "action" }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[2].hand.push(char, action);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts[0]!.pick).toBe("hand");
+    expect(g.pendingPrompts[0]!.handOwner).toBe(2); // choosing from P2's hand
+    // A character isn't a legal pick (excludeCardType).
+    expect(() => reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "ohchar" }, effects)).toThrow(/valid card/i);
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "ohact" }, effects).state;
+    expect(g.players[2].discard.some((c) => c.instanceId === "ohact")).toBe(true);
+    expect(g.players[2].hand.some((c) => c.instanceId === "ohchar")).toBe(true);
+  });
+
+  it("opponentDiscard prompts the opponent to discard their own choice", () => {
+    const effects: CardEffects = {
+      forget: [{ trigger: "on_play", steps: [{ do: "opponentDiscard", amount: 2 }] }],
+    };
+    let g = toPlay(lookupP1Ability("Forget", "forget", "Each opponent discards 2 cards."));
+    const p2HandBefore = g.players[2].hand.length;
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    // The prompt is directed at player 2 (they choose their own cards).
+    expect(g.pendingPrompts[0]!.player).toBe(2);
+    expect(g.pendingPrompts[0]!.handOwner).toBe(2);
+    // P2 discards two of their own, one at a time.
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: g.players[2].hand[0]!.instanceId }, effects).state;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: g.players[2].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    expect(g.players[2].hand.length).toBe(p2HandBefore - 2);
+    expect(g.players[2].discard.length).toBe(2);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

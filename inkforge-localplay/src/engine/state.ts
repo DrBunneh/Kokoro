@@ -93,6 +93,8 @@ export interface Prompt {
   pick?: "character" | "hand" | "confirm" | "deck";
   /** For pick === "deck": the revealed card instanceIds to show face-up. */
   reveal?: string[];
+  /** For pick === "hand": whose hand to choose from (self or an opponent's). */
+  handOwner?: PlayerId;
 }
 
 export interface GameState {

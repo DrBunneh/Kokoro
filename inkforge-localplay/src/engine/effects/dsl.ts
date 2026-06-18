@@ -9,6 +9,7 @@ import { otherPlayer, type CardInstance, type GameState, type PlayerId } from ".
 import { makeLog, type LogEntry } from "../replay";
 import { banishCard, drawCards, findInstance } from "../zones";
 import { effectiveWillpower } from "../keywords";
+import { uid } from "@/lib/id";
 import type { CardType } from "@/data/card-types";
 
 export type Trigger =
@@ -67,8 +68,10 @@ export type Step =
   | { do: "banishAll"; scope?: Scope }
   // "Pay N less for the next matching card you play this turn."
   | { do: "grantDiscount"; amount: number; cardType?: CardType; subtypes?: string[]; uses?: number }
-  // Choose a card from your own hand (suspends for a hand tap):
-  | { do: "chooseFromHand"; as: string; text?: string; optional?: boolean }
+  // Choose a card from a hand (your own, or an opponent's revealed hand):
+  | { do: "chooseFromHand"; as: string; from?: "self" | "opponent"; cardType?: CardType; excludeCardType?: CardType; text?: string; optional?: boolean }
+  // Each opponent chooses and discards `amount` cards from their own hand.
+  | { do: "opponentDiscard"; amount: number }
   // Move a bound (hand) card into the inkwell / discard:
   | { do: "toInkwell"; from: string; exerted?: boolean }
   | { do: "discardCard"; from: string }
@@ -136,6 +139,15 @@ export interface Suspension {
   pick: "character" | "hand" | "confirm" | "deck";
   /** For pick === "deck": the revealed card instanceIds to show face-up. */
   reveal?: string[];
+  /** For pick === "hand": whose hand to choose from. */
+  handOwner?: PlayerId;
+}
+
+/** Does a hand card satisfy a chooseFromHand step's type filter? */
+export function handCardMatches(card: CardInstance, step: Extract<Step, { do: "chooseFromHand" }>): boolean {
+  if (step.cardType && card.printed.type !== step.cardType) return false;
+  if (step.excludeCardType && card.printed.type === step.excludeCardType) return false;
+  return true;
 }
 
 /**
@@ -297,6 +309,27 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "opponentDiscard": {
+      // Push a prompt for the opponent to choose their own cards to discard.
+      const opp = otherPlayer(ctx.controller);
+      const n = Math.min(step.amount, state.players[opp].hand.length);
+      if (n <= 0) break;
+      const sub: Step[] = [];
+      for (let k = 0; k < n; k++) sub.push({ do: "chooseFromHand", as: `d${k}`, from: "self", optional: true }, { do: "discardCard", from: `d${k}` });
+      state.pendingPrompts.push({
+        id: uid(),
+        player: opp,
+        controller: opp,
+        sourceInstanceId: ctx.source.instanceId,
+        kind: "discard",
+        text: `Choose ${n} card${n > 1 ? "s" : ""} to discard`,
+        auto: false,
+        pick: "hand",
+        handOwner: opp,
+        resume: { steps: sub, vars: {} },
+      });
+      break;
+    }
     case "grantDiscount": {
       state.players[ctx.controller].discounts.push({
         amount: step.amount,
@@ -374,7 +407,8 @@ export function runSteps(
         pending = undefined;
         continue;
       }
-      return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "hand" };
+      const handOwner = step.from === "opponent" ? otherPlayer(ctx.controller) : ctx.controller;
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "hand", handOwner };
     }
     if (step.do === "mayConfirm") {
       // A confirmed "Yes" injects a sentinel; consume it and run on. A fresh

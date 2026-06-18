@@ -763,5 +763,20 @@
   "perhapswecansaveourfuture": [
     { "trigger": "on_play", "steps": [{ "do": "debuffAll", "scope": "any", "strength": 3, "duration": "end_of_turn" }] }
   ],
+  "youllneverevenmissit": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseFromHand", "as": "d", "from": "opponent", "cardType": "song", "optional": true, "text": "choose a song from their hand to discard" },
+      { "do": "discardCard", "from": "d" }
+    ] }
+  ],
+  "thebarenecessities": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseFromHand", "as": "d", "from": "opponent", "excludeCardType": "character", "optional": true, "text": "choose a non-character from their hand to discard" },
+      { "do": "discardCard", "from": "d" }
+    ] }
+  ],
+  "youhaveforgottenme": [
+    { "trigger": "on_play", "steps": [{ "do": "opponentDiscard", "amount": 2 }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

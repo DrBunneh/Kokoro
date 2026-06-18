@@ -320,10 +320,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
         selectedId={selHand}
         canInk={!state.hasInkedThisTurn}
         ink={ink}
-        onCardTap={(c) => {
-          if (prompt?.resume && prompt.pick === "hand") { dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId }); return; }
-          setSelHand((id) => (id === c.instanceId ? null : c.instanceId));
-        }}
+        onCardTap={(c) => setSelHand((id) => (id === c.instanceId ? null : c.instanceId))}
         onInk={(c) => { dispatch({ type: "ADD_TO_INK", cardInstanceId: c.instanceId }); setSelHand(null); }}
         onPlay={(c) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId }); setSelHand(null); }}
         onShift={(c, baseId) => { dispatch({ type: "PLAY_CARD", cardInstanceId: c.instanceId, shiftOnto: baseId }); setSelHand(null); }}
@@ -393,6 +390,20 @@ function PromptBar({
             })}
           </div>
         </div>
+      ) : prompt.pick === "hand" ? (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <p className="text-amber-200">{(prompt.handOwner ?? prompt.player) === prompt.player ? "Tap a card from your hand:" : "Tap a card from their hand:"}</p>
+            <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">Skip</button>
+          </div>
+          <div className="flex gap-1 overflow-x-auto">
+            {state.players[prompt.handOwner ?? prompt.player].hand.map((c) => (
+              <button key={c.instanceId} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId })} className="w-16 shrink-0 rounded ring-1 ring-white/10 active:ring-2 active:ring-ink-sapphire">
+                <CardThumb card={c.printed} />
+              </button>
+            ))}
+          </div>
+        </div>
       ) : prompt.pick === "confirm" ? (
         <div className="flex items-center gap-2">
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: "__confirm__" })} className="flex-1 rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Yes</button>
@@ -400,8 +411,8 @@ function PromptBar({
         </div>
       ) : prompt.resume ? (
         <div className="flex items-center gap-2">
-          <span className="flex-1 text-amber-200">{prompt.pick === "hand" ? "Tap a card in your hand." : "Tap a character to target."}</span>
-          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">{prompt.pick === "hand" ? "Skip" : "No target"}</button>
+          <span className="flex-1 text-amber-200">Tap a character to target.</span>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">No target</button>
         </div>
       ) : (
         <div className="space-y-1">

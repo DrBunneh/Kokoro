@@ -396,11 +396,8 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
           return (
             <div key={c.instanceId} className="shrink-0">
               <button
-                onClick={() => {
-                  if (myPrompt && prompt?.resume && prompt.pick === "hand") { act({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId }); return; }
-                  setSelField(null); setSelItem(null); setSel((x) => (x === c.instanceId ? null : c.instanceId));
-                }}
-                className={cn("block w-14 rounded", sel === c.instanceId && "ring-2 ring-ink-sapphire", myPrompt && prompt?.pick === "hand" && "ring-1 ring-amber-300")}
+                onClick={() => { setSelField(null); setSelItem(null); setSel((x) => (x === c.instanceId ? null : c.instanceId)); }}
+                className={cn("block w-14 rounded", sel === c.instanceId && "ring-2 ring-ink-sapphire")}
               ><CardThumb card={c.printed} /></button>
               {sel === c.instanceId && myTurn && !prompt && (
                 <div className="mt-0.5 flex flex-wrap gap-0.5">
@@ -498,6 +495,20 @@ function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel 
             })}
           </div>
         </div>
+      ) : prompt.pick === "hand" ? (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <p className="text-amber-200">{(prompt.handOwner ?? prompt.player) === prompt.player ? "Tap a card from your hand:" : "Tap a card from their hand:"}</p>
+            <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">Skip</button>
+          </div>
+          <div className="flex gap-1 overflow-x-auto">
+            {state.players[prompt.handOwner ?? prompt.player].hand.map((c) => (
+              <button key={c.instanceId} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: c.instanceId })} className="w-14 shrink-0 rounded ring-1 ring-white/10 active:ring-2 active:ring-ink-sapphire">
+                <CardThumb card={c.printed} />
+              </button>
+            ))}
+          </div>
+        </div>
       ) : prompt.pick === "confirm" ? (
         <div className="flex items-center gap-2">
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: "__confirm__" })} className="flex-1 rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Yes</button>
@@ -505,8 +516,8 @@ function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel 
         </div>
       ) : prompt.resume ? (
         <div className="flex items-center gap-2">
-          <span className="flex-1 text-amber-200">{prompt.pick === "hand" ? "Tap a card in your hand." : "Tap a character to target."}</span>
-          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">{prompt.pick === "hand" ? "Skip" : "No target"}</button>
+          <span className="flex-1 text-amber-200">Tap a character to target.</span>
+          <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">No target</button>
         </div>
       ) : (
         <div className="space-y-1">

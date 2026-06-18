@@ -27,7 +27,7 @@ import {
   keywordValue,
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
-import { classifyTrigger, runSteps, targetMatches, scryMatch, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
+import { classifyTrigger, runSteps, targetMatches, scryMatch, handCardMatches, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
 
@@ -221,6 +221,7 @@ function runAbility(
           scope: suspension.scope,
           pick: suspension.pick,
           reveal: suspension.reveal,
+          handOwner: suspension.handOwner,
           resume: { steps: suspension.steps, vars: ctx.vars },
         });
       } else {
@@ -535,6 +536,7 @@ export function reduce(
             scope: suspension.scope,
             pick: suspension.pick,
             reveal: suspension.reveal,
+            handOwner: suspension.handOwner,
             resume: { steps: suspension.steps, vars: ctx.vars },
           });
         }
@@ -659,9 +661,11 @@ export function reduce(
                   throw new GameError("Not a legal target for this ability");
                 }
               } else {
-                // chooseFromHand: the card must be in the resolver's own hand.
-                if (!loc || loc.zone !== "hand" || loc.owner !== prompt.controller) {
-                  throw new GameError("Must choose a card from your hand");
+                // chooseFromHand: the card must be in the right hand (own, or an
+                // opponent's for "you choose what they discard") and match the filter.
+                const handOwner = lead.from === "opponent" ? otherPlayer(prompt.controller) : prompt.controller;
+                if (!loc || loc.zone !== "hand" || loc.owner !== handOwner || !handCardMatches(loc.card, lead)) {
+                  throw new GameError("Not a valid card to choose");
                 }
               }
             } else if (lead.optional) {
@@ -684,6 +688,7 @@ export function reduce(
               scope: again.scope,
               pick: again.pick,
               reveal: again.reveal,
+              handOwner: again.handOwner,
               resume: { steps: again.steps, vars: ctx.vars },
             });
           }
