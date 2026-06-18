@@ -671,5 +671,20 @@
       ]
     }
   ],
+  "developyourbrain": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 2, "rest": "bottom", "text": "look at the top 2; keep one, the other goes to the bottom" }] }
+  ],
+  "visionofthefuture": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 5, "rest": "bottom", "text": "look at the top 5; keep one, the rest go to the bottom" }] }
+  ],
+  "howfarillgo": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 2, "rest": "inkwellExerted", "text": "look at the top 2; keep one, the other to your inkwell exerted" }] }
+  ],
+  "thepathrevealed": [
+    { "trigger": "activated", "steps": [{ "do": "lookAtTop", "count": 2, "rest": "bottom", "text": "look at the top 2; keep one, the other goes to the bottom" }] }
+  ],
+  "beprepared": [
+    { "trigger": "on_play", "steps": [{ "do": "banishAll", "scope": "any" }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

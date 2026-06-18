@@ -37,6 +37,11 @@ export type Step =
   | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean; filter?: TargetFilter }
   // Optional "may" gate — suspends for a Yes/No before the steps that follow:
   | { do: "mayConfirm"; text?: string }
+  // Scry: reveal the top `count` of your deck, keep one in hand, send the rest
+  // to the bottom (in revealed order) or your inkwell exerted.
+  | { do: "lookAtTop"; count: number; rest?: "bottom" | "inkwellExerted"; text?: string }
+  // Banish every character (Be Prepared) — or a scoped subset.
+  | { do: "banishAll"; scope?: Scope }
   // Choose a card from your own hand (suspends for a hand tap):
   | { do: "chooseFromHand"; as: string; text?: string; optional?: boolean }
   // Move a bound (hand) card into the inkwell / discard:
@@ -98,8 +103,10 @@ export interface Suspension {
   text?: string;
   optional: boolean;
   filter?: TargetFilter;
-  /** What the resolver picks: a board character, a hand card, or a Yes/No. */
-  pick: "character" | "hand" | "confirm";
+  /** What the resolver picks: a board character, a hand card, a Yes/No, or a revealed deck card. */
+  pick: "character" | "hand" | "confirm" | "deck";
+  /** For pick === "deck": the revealed card instanceIds to show face-up. */
+  reveal?: string[];
 }
 
 /**
@@ -216,6 +223,19 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "banishAll": {
+      const scope = step.scope ?? "any";
+      for (const owner of [1, 2] as PlayerId[]) {
+        if (scope === "ally" && owner !== ctx.controller) continue;
+        if (scope === "enemy" && owner === ctx.controller) continue;
+        const chars = state.players[owner].field.filter((c) => c.printed.type === "character");
+        for (const c of chars) {
+          banishCard(state.players[owner], c, logs, state.turnNumber);
+          ctx.banished?.push({ card: c, owner });
+        }
+      }
+      break;
+    }
     case "draw": {
       const p = state.players[player(ctx, step.player)];
       drawCards(p, step.amount ?? 1);
@@ -277,6 +297,29 @@ export function runSteps(
       // arrival suspends for the Yes/No choice.
       if (pending != null) { pending = undefined; continue; }
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: true, pick: "confirm" };
+    }
+    if (step.do === "lookAtTop") {
+      const p = state.players[ctx.controller];
+      if (pending != null) {
+        // `pending` is the chosen card to keep in hand; the rest go to `rest`.
+        const chosenId = pending; pending = undefined;
+        const revealed = p.deck.splice(0, Math.min(step.count, p.deck.length));
+        const keep = revealed.filter((c) => c.instanceId === chosenId);
+        const others = revealed.filter((c) => c.instanceId !== chosenId);
+        // If the chosen id wasn't among the revealed (shouldn't happen), keep the first.
+        if (keep.length === 0 && revealed.length) { keep.push(revealed[0]!); others.shift(); }
+        for (const c of keep) { c.justPlayed = false; c.exerted = false; p.hand.push(c); }
+        if ((step.rest ?? "bottom") === "inkwellExerted") {
+          for (const c of others) { c.exerted = true; c.justPlayed = true; p.inkwell.push(c); }
+        } else {
+          p.deck.push(...others); // to the bottom, in revealed order
+        }
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_DRAWN", message: `Looked at top ${revealed.length}, kept ${keep.length}` }));
+        continue;
+      }
+      const top = p.deck.slice(0, step.count);
+      if (top.length === 0) continue; // empty deck — nothing to look at
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: false, pick: "deck", reveal: top.map((c) => c.instanceId) };
     }
     applyStep(state, step, ctx, logs);
   }

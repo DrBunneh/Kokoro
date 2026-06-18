@@ -198,6 +198,7 @@ function runAbility(
           controller,
           scope: suspension.scope,
           pick: suspension.pick,
+          reveal: suspension.reveal,
           resume: { steps: suspension.steps, vars: ctx.vars },
         });
       } else {
@@ -510,6 +511,7 @@ export function reduce(
             controller: next.currentPlayer,
             scope: suspension.scope,
             pick: suspension.pick,
+            reveal: suspension.reveal,
             resume: { steps: suspension.steps, vars: ctx.vars },
           });
         }
@@ -608,6 +610,10 @@ export function reduce(
           if (lead && lead.do === "mayConfirm") {
             // Yes (a sentinel target) runs on; No (no target) aborts the effect.
             if (action.targetInstanceId == null) steps = [];
+          } else if (lead && lead.do === "lookAtTop") {
+            // Keep the chosen revealed card; default to the top card if none/invalid.
+            const top = next.players[prompt.controller].deck.slice(0, lead.count).map((c) => c.instanceId);
+            inject = action.targetInstanceId && top.includes(action.targetInstanceId) ? action.targetInstanceId : top[0];
           } else if (lead && (lead.do === "chooseCharacter" || lead.do === "chooseFromHand")) {
             if (action.targetInstanceId != null) {
               const loc = findInstance(next, action.targetInstanceId);
@@ -641,6 +647,7 @@ export function reduce(
               controller: prompt.controller,
               scope: again.scope,
               pick: again.pick,
+              reveal: again.reveal,
               resume: { steps: again.steps, vars: ctx.vars },
             });
           }

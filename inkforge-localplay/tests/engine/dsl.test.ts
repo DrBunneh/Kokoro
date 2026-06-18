@@ -260,6 +260,61 @@ describe("Effect DSL + the bag", () => {
     expect(confirmed.players[1].deck.length).toBe(deckBefore - 1);
   });
 
+  it("scry (lookAtTop): keeps the chosen card, sends the rest to the bottom", () => {
+    const effects: CardEffects = {
+      scry: [{ trigger: "on_play", steps: [{ do: "lookAtTop", count: 2, rest: "bottom" }] }],
+    };
+    let g = toPlay(lookupP1Ability("Scry", "scry", "Look at the top 2 cards. Put one into your hand and the other on the bottom."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(1);
+    expect(g.pendingPrompts[0]!.pick).toBe("deck");
+    expect(g.pendingPrompts[0]!.reveal).toHaveLength(2);
+    const [topId, secondId] = g.pendingPrompts[0]!.reveal!;
+    const handBefore = g.players[1].hand.length;
+    const deckBefore = g.players[1].deck.length;
+    // Keep the second revealed card.
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: secondId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    expect(g.players[1].hand.some((c) => c.instanceId === secondId)).toBe(true);
+    expect(g.players[1].hand.length).toBe(handBefore + 1);
+    // The other revealed card went to the bottom of the deck.
+    expect(g.players[1].deck.at(-1)!.instanceId).toBe(topId);
+    expect(g.players[1].deck.length).toBe(deckBefore - 1); // one moved to hand
+  });
+
+  it("scry to inkwell (How Far I'll Go variant) puts the rest in the inkwell exerted", () => {
+    const effects: CardEffects = {
+      sing: [{ trigger: "on_play", steps: [{ do: "lookAtTop", count: 2, rest: "inkwellExerted" }] }],
+    };
+    let g = toPlay(lookupP1Ability("Sing", "sing", "Look at the top 2 cards. Put one into your hand and the other into your inkwell exerted."));
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    const inkBefore = g.players[1].inkwell.length;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    const keepId = g.pendingPrompts[0]!.reveal![0]!;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: keepId }, effects).state;
+    expect(g.players[1].hand.some((c) => c.instanceId === keepId)).toBe(true);
+    expect(g.players[1].inkwell.length).toBe(inkBefore + 1);
+    expect(g.players[1].inkwell.at(-1)!.exerted).toBe(true);
+  });
+
+  it("banishAll (Be Prepared) banishes every character on both sides", () => {
+    const effects: CardEffects = {
+      wipe: [{ trigger: "on_play", steps: [{ do: "banishAll", scope: "any" }] }],
+    };
+    let g = toPlay(lookupP1Ability("Wipe", "wipe", "Banish all characters."));
+    const mine = { instanceId: "m1", printed: printed("m1", { willpower: 3 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    const theirs = { instanceId: "t1", printed: printed("t1", { willpower: 3 }), damage: 0, exerted: true, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[1].field.push(mine);
+    g.players[2].field.push(theirs);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.players[1].field).toHaveLength(0);
+    expect(g.players[2].field).toHaveLength(0);
+    expect(g.players[1].discard.some((c) => c.instanceId === "m1")).toBe(true);
+    expect(g.players[2].discard.some((c) => c.instanceId === "t1")).toBe(true);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

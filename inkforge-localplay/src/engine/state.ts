@@ -77,8 +77,10 @@ export interface Prompt {
   resume?: { steps: Step[]; vars: Record<string, string> };
   /** Allowed target scope for the pending choice (UI hint). */
   scope?: Scope;
-  /** What the resolver picks: a board character, a hand card, or a Yes/No. */
-  pick?: "character" | "hand" | "confirm";
+  /** What the resolver picks: a board character, a hand card, a Yes/No, or a revealed deck card. */
+  pick?: "character" | "hand" | "confirm" | "deck";
+  /** For pick === "deck": the revealed card instanceIds to show face-up. */
+  reveal?: string[];
 }
 
 export interface GameState {

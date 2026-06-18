@@ -376,7 +376,21 @@ function PromptBar({
           <p className="text-amber-50">{prompt.text}</p>
         </div>
       </div>
-      {prompt.pick === "confirm" ? (
+      {prompt.pick === "deck" ? (
+        <div className="space-y-1">
+          <p className="text-amber-200">Tap a card to keep it in your hand:</p>
+          <div className="flex gap-1 overflow-x-auto">
+            {(prompt.reveal ?? []).map((id) => {
+              const c = state.players[prompt.player].deck.find((x) => x.instanceId === id);
+              return c ? (
+                <button key={id} onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: id })} className="w-16 shrink-0 rounded ring-1 ring-white/10 active:ring-2 active:ring-ink-sapphire">
+                  <CardThumb card={c.printed} />
+                </button>
+              ) : null;
+            })}
+          </div>
+        </div>
+      ) : prompt.pick === "confirm" ? (
         <div className="flex items-center gap-2">
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id, targetInstanceId: "__confirm__" })} className="flex-1 rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Yes</button>
           <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="flex-1 rounded bg-white/10 px-2 py-1">No</button>
