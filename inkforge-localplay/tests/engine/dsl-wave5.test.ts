@@ -42,3 +42,30 @@ describe("Wave 5 — returnSelfToHand", () => {
     expect(g.players[1].hand).toHaveLength(0);
   });
 });
+
+describe("Wave 5 — playFree", () => {
+  it("suspends on a hand picker, then puts the chosen cost-≤2 character into play", () => {
+    const src = inst("s", printed());
+    const cheap = inst("c", printed({ type: "character", cost: 2 }));
+    const pricey = inst("p", printed({ type: "character", cost: 5 }));
+    const g = state({ field: [src], hand: [cheap, pricey] });
+    const susp = run(g, src, [{ do: "playFree", from: "hand", cardType: "character", maxCost: 2, optional: true }]);
+    expect(susp).not.toBeNull();
+    expect(susp!.pick).toBe("hand");
+    // Resume with the cheap character → it enters play; pricey stays in hand.
+    const ctx: EffectContext = { controller: 1, source: src, vars: {}, banished: [] };
+    runSteps(g, susp!.steps, ctx, [], "c");
+    expect(g.players[1].field.some((c) => c.instanceId === "c")).toBe(true);
+    expect(g.players[1].field.find((c) => c.instanceId === "c")!.justPlayed).toBe(true);
+    expect(g.players[1].hand.map((c) => c.instanceId)).toEqual(["p"]);
+  });
+
+  it("skips entirely when no legal card exists", () => {
+    const src = inst("s", printed());
+    const pricey = inst("p", printed({ cost: 9 }));
+    const g = state({ field: [src], hand: [pricey] });
+    const susp = run(g, src, [{ do: "playFree", from: "hand", cardType: "character", maxCost: 2, optional: true }]);
+    expect(susp).toBeNull(); // nothing to play → no prompt
+    expect(g.players[1].field).toHaveLength(1);
+  });
+});

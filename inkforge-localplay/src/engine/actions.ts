@@ -146,6 +146,7 @@ function selfCostReduction(state: GameState, p: PlayerState, source: CardInstanc
     for (const def of effects[sa.slug] ?? []) {
       if (def.trigger !== "cost") continue;
       if (!conditionMet(state, p === state.players[1] ? 1 : 2, source, def.when)) continue;
+      if (def.free) return source.printed.cost; // free play — reduce the whole cost
       total += def.reduce ?? 0;
       if (def.reducePer === "actionInDiscard") total += p.discard.filter((c) => c.printed.type === "action" || c.printed.type === "song").length;
       else if (def.reducePer === "characterInPlay") total += p.field.filter((c) => c.printed.type === "character").length;
@@ -264,6 +265,7 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.onlyOpponentTurn && state.currentPlayer === controller) return false;
   if (when.haveCharStrengthAtLeast != null && !p.field.some((c) => c.printed.type === "character" && effectiveStrength(state, c) >= when.haveCharStrengthAtLeast!)) return false;
   if (when.lacksCharStrengthAtLeast != null && p.field.some((c) => c.printed.type === "character" && effectiveStrength(state, c) >= when.lacksCharStrengthAtLeast!)) return false;
+  if (when.actionsPlayedAtLeast != null && played.filter((x) => x.type === "action" || x.type === "song").length < when.actionsPlayedAtLeast) return false;
   return true;
 }
 
@@ -458,6 +460,7 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   // while its controller holds 3+ cards.
   for (const c of [...p.field, ...p.items, ...p.inkwell]) {
     c.justPlayed = false;
+    c.questLockedThisTurn = false;
     const stoneLocked = p.hand.length >= 3 && c.printed.specialAbilities.some((a) => a.slug === "stonebyday");
     if (!stoneLocked) c.exerted = false;
   }
@@ -708,6 +711,7 @@ export function reduce(
       if (!card) throw new GameError("Character not in play");
       if (card.printed.type !== "character") throw new GameError("Only characters can quest");
       if (card.exerted) throw new GameError("Character is exerted");
+      if (card.questLockedThisTurn) throw new GameError("This character can't quest this turn");
       // Dash "Record Time" may quest the turn he's played (ignores drying).
       const questAnyTime = card.printed.specialAbilities.some((a) => a.slug === "recordtime");
       if (card.justPlayed && !questAnyTime) throw new GameError("Character is drying (played this turn)");
@@ -888,6 +892,20 @@ export function reduce(
             } else {
               const mustKeep = !(lead.optional ?? false) && kept === 0 && legal.length > 0;
               inject = mustKeep ? legal[0]!.instanceId : "__rfdstop__";
+            }
+          } else if (lead && lead.do === "playFree") {
+            const from = lead.from ?? "hand";
+            const zone = from === "discard" ? next.players[prompt.controller].discard : next.players[prompt.controller].hand;
+            const legal = zone.filter((c) =>
+              (c.printed.type === "character" || c.printed.type === "item" || c.printed.type === "location") &&
+              (!lead.cardType || c.printed.type === lead.cardType) &&
+              (lead.maxCost == null || c.printed.cost <= lead.maxCost) &&
+              (!lead.subtype || c.printed.subtypes.some((s) => s.toLowerCase() === lead.subtype!.toLowerCase())));
+            if (action.targetInstanceId != null) {
+              if (!legal.some((c) => c.instanceId === action.targetInstanceId)) throw new GameError("Not a valid card to play for free");
+              inject = action.targetInstanceId;
+            } else {
+              inject = "__pfstop__"; // declined (playFree is always optional)
             }
           } else if (lead && lead.do === "chooseItem") {
             if (action.targetInstanceId != null) {

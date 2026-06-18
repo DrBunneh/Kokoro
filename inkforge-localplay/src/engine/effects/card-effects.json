@@ -1481,5 +1481,27 @@
       { "do": "buff", "to": "t", "strength": 2, "duration": "end_of_turn" }
     ] }
   ],
+  "someonetocarefor": [
+    { "trigger": "on_play", "steps": [{ "do": "playFree", "from": "hand", "cardType": "character", "maxCost": 2, "optional": true, "text": "play a character (cost 2 or less) for free" }] }
+  ],
+  "letsgetmovin": [
+    { "trigger": "on_quest", "steps": [
+      { "do": "draw", "player": "self", "amount": 1 },
+      { "do": "playFree", "from": "hand", "cardType": "character", "maxCost": 2, "optional": true, "text": "play a character (cost 2 or less) for free" }
+    ] }
+  ],
+  "imbeautifulbaby": [
+    { "trigger": "on_quest", "steps": [{ "do": "playFree", "from": "hand", "cardType": "item", "optional": true, "text": "play an item for free" }] }
+  ],
+  "stompintime": [
+    { "trigger": "cost", "free": true, "when": { "actionsPlayedAtLeast": 3 } }
+  ],
+  "raaawr": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "text": "ready a character (it can't quest this turn)" },
+      { "do": "ready", "to": "t" },
+      { "do": "lockQuest", "to": "t" }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

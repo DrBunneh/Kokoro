@@ -43,6 +43,8 @@ export interface CardInstance {
   appliedEffects: AppliedEffect[];
   /** Shift stacks / tucked cards. */
   cardsUnder: CardInstance[];
+  /** Readied but barred from questing for the rest of this turn (Lilo - Causing an Uproar). */
+  questLockedThisTurn?: boolean;
 }
 
 /** A turn-scoped "pay N less for the next matching play" discount. */

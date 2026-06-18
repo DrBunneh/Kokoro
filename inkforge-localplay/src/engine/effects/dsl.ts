@@ -78,6 +78,8 @@ export interface Condition {
   haveCharStrengthAtLeast?: number;
   /** You have NO character in play with this {S} or more (Maximus "instead" tier). */
   lacksCharStrengthAtLeast?: number;
+  /** You have played at least N actions/songs this turn (Lilo - Causing an Uproar). */
+  actionsPlayedAtLeast?: number;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -163,6 +165,8 @@ export type Step =
   // Area stat change to every character in scope (optionally excluding the source):
   | { do: "buffAll" | "debuffAll"; scope?: Scope; strength?: number; willpower?: number; lore?: number; duration?: "end_of_turn" | "permanent" | "untilNextTurn"; excludeSelf?: boolean }
   | { do: "ready" | "exert"; to: string }
+  // Bar a bound character from questing for the rest of this turn (Lilo - Uproar):
+  | { do: "lockQuest"; to: string }
   // Add the source's own {S}/{W} to a bound target's strength this turn (Zipper, Support-like):
   | { do: "buffBySourceStat"; to: string; stat: "strength" | "willpower" }
   // Exert every character in scope (Demona):
@@ -191,6 +195,10 @@ export type Step =
   | { do: "discardChoose"; amount?: number; amountPer?: AmountPer; text?: string }
   // Play the source card from your discard into play (Lilo - Escape Artist):
   | { do: "playFromDiscard"; exerted?: boolean }
+  // Play ANOTHER card (from hand or discard) into play for free (Lady - Family Dog,
+  // Woody - Jungle Guide, Tamatoa). The freely-played card's own on_play does not
+  // chain (board state only).
+  | { do: "playFree"; from?: "hand" | "discard"; cardType?: CardType; maxCost?: number; subtype?: string; optional?: boolean; text?: string }
   // Return the source card from your discard to your hand (Will o' the Wisp / Snow White):
   | { do: "returnSelfToHand" }
   | { do: "discard"; player?: Who; amount?: number }
@@ -207,6 +215,8 @@ export interface EffectDef {
   reducePer?: "actionInDiscard" | "characterInPlay";
   /** For trigger "cost": reduction that scales with characters of this subtype in your discard (Bouncing Ducky — Toy). */
   reduceSubtypeInDiscard?: string;
+  /** For trigger "cost": play this card for free when `when` holds (Lilo - Causing an Uproar). */
+  free?: boolean;
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
@@ -433,6 +443,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "ready": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = false; break; }
+    case "lockQuest": { const t = resolveTarget(state, ctx, step.to); if (t) t.questLockedThisTurn = true; break; }
     case "exert": { const t = resolveTarget(state, ctx, step.to); if (t) t.exerted = true; break; }
     case "exertAll": {
       for (const c of charsInScope(state, ctx.controller, step.scope ?? "any")) c.exerted = true;
@@ -774,6 +785,33 @@ export function runSteps(
       if (pool.length === 0) continue;
       ctx.vars[nsK] = "0";
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "discard", reveal: pool.map((c) => c.instanceId) };
+    }
+    if (step.do === "playFree") {
+      const from = step.from ?? "hand";
+      const p = state.players[ctx.controller];
+      const zone = from === "discard" ? p.discard : p.hand;
+      const matches = (c: CardInstance) =>
+        (c.printed.type === "character" || c.printed.type === "item" || c.printed.type === "location") &&
+        (!step.cardType || c.printed.type === step.cardType) &&
+        (step.maxCost == null || c.printed.cost <= step.maxCost) &&
+        (!step.subtype || c.printed.subtypes.some((s) => s.toLowerCase() === step.subtype!.toLowerCase()));
+      if (pending != null) {
+        if (pending !== "__pfstop__") {
+          const idx = zone.findIndex((c) => c.instanceId === pending && matches(c));
+          if (idx >= 0) {
+            const card = zone.splice(idx, 1)[0]!;
+            card.damage = 0; card.appliedEffects = [];
+            if (card.printed.type === "item") { card.justPlayed = false; card.exerted = false; p.items.push(card); }
+            else { card.justPlayed = true; card.exerted = false; p.field.push(card); }
+            logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_PLAYED", message: `Played ${card.printed.fullName} for free`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
+          }
+        }
+        pending = undefined;
+        continue;
+      }
+      const pool = zone.filter(matches);
+      if (pool.length === 0) continue;
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? true, pick: from === "discard" ? "discard" : "hand", handOwner: ctx.controller, reveal: from === "discard" ? pool.map((c) => c.instanceId) : undefined };
     }
     if (step.do === "lookAtTop") {
       const p = state.players[ctx.controller];
