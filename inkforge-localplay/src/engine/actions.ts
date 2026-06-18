@@ -133,7 +133,7 @@ function readyInk(p: PlayerState): CardInstance[] {
 
 /** Discounts that apply to playing this card (type + subtype match). */
 function matchingDiscounts(p: PlayerState, card: CardInstance["printed"]) {
-  return p.discounts.filter(
+  return (p.discounts ?? []).filter(
     (d) =>
       d.uses > 0 &&
       (!d.cardType || d.cardType === card.type) &&
@@ -150,7 +150,7 @@ function effectiveCost(p: PlayerState, card: CardInstance["printed"]): number {
 /** Consume one use of each discount applied to this play; drop depleted ones. */
 function consumeDiscounts(p: PlayerState, card: CardInstance["printed"]): void {
   for (const d of matchingDiscounts(p, card)) d.uses -= 1;
-  p.discounts = p.discounts.filter((d) => d.uses > 0);
+  p.discounts = (p.discounts ?? []).filter((d) => d.uses > 0);
 }
 
 /** Pay a cost by exerting that many ready ink. Caller must check affordability. */
@@ -406,7 +406,7 @@ export function reduce(
       if (next.status !== "playing") throw new GameError("Not in play");
       const inkP = next.players[next.currentPlayer];
       // One ink per turn, plus any granted extra inkings (Sail the Azurite Sea).
-      if (next.hasInkedThisTurn && inkP.extraInk <= 0) throw new GameError("Already inked this turn");
+      if (next.hasInkedThisTurn && (inkP.extraInk ?? 0) <= 0) throw new GameError("Already inked this turn");
       const p = inkP;
       const idx = p.hand.findIndex((c) => c.instanceId === action.cardInstanceId);
       if (idx < 0) throw new GameError("Card not in hand");

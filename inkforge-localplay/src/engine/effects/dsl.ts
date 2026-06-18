@@ -382,7 +382,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "grantExtraInk": {
-      state.players[ctx.controller].extraInk += step.amount ?? 1;
+      state.players[ctx.controller].extraInk = (state.players[ctx.controller].extraInk ?? 0) + (step.amount ?? 1);
       break;
     }
     case "toBottomAll": {
@@ -445,7 +445,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "grantDiscount": {
-      state.players[ctx.controller].discounts.push({
+      (state.players[ctx.controller].discounts ??= []).push({
         amount: step.amount,
         cardType: step.cardType,
         subtypes: step.subtypes,
