@@ -141,6 +141,8 @@ export interface GameState {
   endStepDone?: boolean;
   /** "instanceId:slug" of free once-per-turn abilities already used this turn. */
   usedActivated?: string[];
+  /** Re-entrancy guard so a draw/discard watch's own draws don't cascade. */
+  eventGuard?: boolean;
 }
 
 export const WIN_LORE = 20;

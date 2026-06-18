@@ -29,6 +29,9 @@ export type Trigger =
   | "on_challenge_banish" // when this character banishes another in a challenge
   | "on_other_banished" // whenever any character is banished (controller-wide watch)
   | "on_inkwell_added" // whenever a card is put into your inkwell (controller-wide watch)
+  | "on_draw" // whenever you draw a card (your field watches)
+  | "on_opponent_draw" // whenever an opponent draws on their turn (your field watches)
+  | "on_opponent_discard" // whenever an opponent discards a card (your field watches)
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
@@ -275,6 +278,15 @@ export interface EffectContext {
   vars: Record<string, string>; // bound var name -> instanceId
   /** Cards banished while these steps ran, so on_banish triggers can fire after. */
   banished?: { card: CardInstance; owner: PlayerId }[];
+  /** Hooks the reducer wires up so draws/discards inside an effect fire further
+   * triggers (on_draw / opponent-discard watches). */
+  events?: EffectEvents;
+}
+
+/** Reducer-supplied callbacks for events that happen mid-effect. */
+export interface EffectEvents {
+  onDraw?(player: PlayerId): void;
+  onDiscard?(player: PlayerId): void;
 }
 
 /** A suspended sequence awaiting a target choice. Serialisable (frame-safe). */
@@ -522,11 +534,14 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "discardHandDraw": {
-      const p = state.players[player(ctx, step.player)];
+      const pid = player(ctx, step.player);
+      const p = state.players[pid];
       const n = p.hand.length;
       p.discard.push(...p.hand.splice(0, n));
       p.discardedThisTurn = (p.discardedThisTurn ?? 0) + n;
+      for (let k = 0; k < n; k++) ctx.events?.onDiscard?.(pid);
       drawCards(p, step.draw);
+      for (let k = 0; k < step.draw; k++) ctx.events?.onDraw?.(pid);
       break;
     }
     case "randomDiscard": {
@@ -536,6 +551,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         const i = rng.int(opp.hand.length);
         opp.discard.push(opp.hand.splice(i, 1)[0]!);
         opp.discardedThisTurn = (opp.discardedThisTurn ?? 0) + 1;
+        ctx.events?.onDiscard?.(otherPlayer(ctx.controller));
       }
       state.rngCursor = rng.cursor;
       break;
@@ -597,6 +613,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         if (i >= 0) arr.splice(i, 1);
         state.players[loc.owner].discard.push(t);
         state.players[loc.owner].discardedThisTurn = (state.players[loc.owner].discardedThisTurn ?? 0) + 1;
+        ctx.events?.onDiscard?.(loc.owner);
       }
       break;
     }
@@ -656,6 +673,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       for (const pid of targets) {
         drawCards(state.players[pid], n);
         logs.push(makeLog({ turnNumber: state.turnNumber, player: pid, type: "CARD_DRAWN", message: `Draw ${n}` }));
+        for (let k = 0; k < n; k++) ctx.events?.onDraw?.(pid);
       }
       break;
     }
@@ -705,8 +723,9 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "discard": {
-      const p = state.players[player(ctx, step.player)];
-      for (let i = 0; i < (step.amount ?? 1); i++) { const c = p.hand.pop(); if (c) { p.discard.push(c); p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1; } }
+      const pid = player(ctx, step.player);
+      const p = state.players[pid];
+      for (let i = 0; i < (step.amount ?? 1); i++) { const c = p.hand.pop(); if (c) { p.discard.push(c); p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1; ctx.events?.onDiscard?.(pid); } }
       break;
     }
     case "gainLore": {
@@ -779,6 +798,7 @@ export function runSteps(
           const card = p.hand.splice(idx, 1)[0]!;
           p.discard.push(card);
           p.discardedThisTurn = (p.discardedThisTurn ?? 0) + 1;
+          ctx.events?.onDiscard?.(ctx.controller);
           remain -= 1;
           ctx.vars[ns] = String(remain);
         }

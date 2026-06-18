@@ -1555,6 +1555,18 @@
       { "do": "drawToMatchOpponentHand" }
     ] }
   ],
+  "heavilyarmed": [
+    { "trigger": "on_draw", "steps": [{ "do": "grantKeyword", "to": "self", "keyword": "Challenger", "value": 1, "duration": "end_of_turn" }] }
+  ],
+  "circlefarandwide": [
+    { "trigger": "on_opponent_draw", "when": { "selfExerted": true }, "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "isentenceyou": [
+    { "trigger": "on_opponent_discard", "steps": [{ "do": "draw", "player": "self", "amount": 1 }] }
+  ],
   "letsgohome": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
   ],

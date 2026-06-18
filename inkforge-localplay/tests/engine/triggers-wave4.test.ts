@@ -86,6 +86,29 @@ describe("Wave 4 — new triggers", () => {
     expect(g.players[1].lore).toBe(2);
   });
 
+  it("on_opponent_discard: a watcher draws when an effect makes the opponent discard", () => {
+    const effects: CardEffects = {
+      sentence: [{ trigger: "on_opponent_discard", steps: [{ do: "draw", player: "self", amount: 1 }] }],
+      mill: [{ trigger: "on_play", steps: [{ do: "randomDiscard", amount: 2 }] }],
+    };
+    const lookup: CardLookup = (id) =>
+      id.includes("-a")
+        ? printed(id, { specialAbilities: [{ name: "Sentence", slug: "sentence", effect: "Whenever your opponent discards a card, draw a card." }] })
+        : printed(id);
+    let g = toPlay(lookup);
+    // P1 has the watcher in play; give P2 a couple of hand cards to be milled.
+    const watcher = g.players[1].hand.shift()!; watcher.justPlayed = false;
+    g.players[1].field.push(watcher);
+    // Put a "mill" card in P1 hand that forces P2 to discard 2 at random.
+    const mill = printed("mill-x", { specialAbilities: [{ name: "Mill", slug: "mill", effect: "Make opponent discard." }] });
+    g.players[1].hand.unshift({ instanceId: "mill1", printed: mill, damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    const handBefore = g.players[1].hand.length;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: "mill1" }, effects).state;
+    // P2 discarded 2 → watcher drew 2 (net P1 hand: -1 played +2 drawn = +1).
+    expect(g.players[1].hand.length).toBe(handBefore - 1 + 2);
+  });
+
   it("on_challenge_banish fires for the attacker when it banishes the defender", () => {
     const effects: CardEffects = { winner: [{ trigger: "on_challenge_banish", steps: [{ do: "gainLore", player: "self", amount: 2 }] }] };
     const lookup: CardLookup = (id) =>

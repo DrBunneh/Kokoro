@@ -30,7 +30,7 @@ import {
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
 import { damagePrevented } from "./continuous";
-import { classifyTrigger, runSteps, targetMatches, scryMatch, handCardMatches, type CardEffects, type Condition, type EffectContext, type Step, type Trigger } from "./effects/dsl";
+import { classifyTrigger, runSteps, targetMatches, scryMatch, handCardMatches, type CardEffects, type Condition, type EffectContext, type EffectEvents, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
 
@@ -306,7 +306,7 @@ function runAbility(
         if ((state.usedActivated ?? []).includes(key)) continue;
         (state.usedActivated ??= []).push(key);
       }
-      const ctx: EffectContext = { controller, source, vars: {}, banished };
+      const ctx: EffectContext = { controller, source, vars: {}, banished, events: makeEvents(state, logs, effects, banished) };
       const suspension = runSteps(state, def.steps ?? [], ctx, logs);
       if (suspension) {
         state.pendingPrompts.push({
@@ -415,7 +415,7 @@ function fireAllyChallenged(
       const defs = (effects[sa.slug] ?? []).filter((d) => d.trigger === "on_ally_challenged");
       for (const def of defs) {
         if (!conditionMet(state, owner, c, def.when)) continue;
-        const ctx: EffectContext = { controller: owner, source: c, vars: { challenger: attacker.instanceId }, banished };
+        const ctx: EffectContext = { controller: owner, source: c, vars: { challenger: attacker.instanceId }, banished, events: makeEvents(state, logs, effects, banished) };
         const suspension = runSteps(state, def.steps ?? [], ctx, logs);
         if (suspension) {
           state.pendingPrompts.push({
@@ -451,7 +451,7 @@ function fireWatch(
       const defs = (effects[sa.slug] ?? []).filter((d) => d.trigger === trigger);
       for (const def of defs) {
         if (!conditionMet(state, owner, c, def.when, ev)) continue;
-        const ctx: EffectContext = { controller: owner, source: c, vars: {}, banished };
+        const ctx: EffectContext = { controller: owner, source: c, vars: {}, banished, events: makeEvents(state, logs, effects, banished) };
         const suspension = runSteps(state, def.steps ?? [], ctx, logs);
         if (suspension) {
           state.pendingPrompts.push({
@@ -465,6 +465,35 @@ function fireWatch(
       }
     }
   }
+}
+
+/**
+ * Build the mid-effect event hooks the interpreter calls when a draw/discard
+ * happens inside an effect, so on_draw / opponent-discard watches fire. A guard
+ * on the state prevents a watch's own draws from cascading.
+ */
+function makeEvents(state: GameState, logs: LogEntry[], effects: CardEffects, banished?: BanishRef[]): EffectEvents {
+  return {
+    onDraw: (player) => {
+      if (state.eventGuard) return;
+      state.eventGuard = true;
+      try {
+        fireWatch(state, "on_draw", player, logs, effects, banished);
+        if (state.currentPlayer === player) fireWatch(state, "on_opponent_draw", otherPlayer(player), logs, effects, banished);
+      } finally {
+        state.eventGuard = false;
+      }
+    },
+    onDiscard: (player) => {
+      if (state.eventGuard) return;
+      state.eventGuard = true;
+      try {
+        fireWatch(state, "on_opponent_discard", otherPlayer(player), logs, effects, banished);
+      } finally {
+        state.eventGuard = false;
+      }
+    },
+  };
 }
 
 /** Fire an event trigger for every character a player controls (e.g. "whenever you play an action"). */
@@ -548,6 +577,11 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
     return;
   }
   logs.push(log({ turnNumber: state.turnNumber, player, type: "CARD_DRAWN", message: `${p.name} drew a card` }));
+  // "Whenever you draw" / opponent-draw watches (Royal Guard, Diablo - Devoted).
+  if (effects) {
+    fireWatch(state, "on_draw", player, logs, effects);
+    fireWatch(state, "on_opponent_draw", otherPlayer(player), logs, effects);
+  }
 
   // Locations passively generate lore at the start of their controller's turn.
   for (const c of p.field) {
@@ -807,7 +841,7 @@ export function reduce(
           { do: "chooseCharacter", as: "ally", scope: "ally", text: `add +${amount} ¤ to another character this turn` },
           { do: "buff", to: "ally", strength: amount, duration: "end_of_turn" },
         ];
-        const ctx: EffectContext = { controller: next.currentPlayer, source: card, vars: {}, banished };
+        const ctx: EffectContext = { controller: next.currentPlayer, source: card, vars: {}, banished, events: makeEvents(next, logs, effects, banished) };
         const suspension = runSteps(next, steps, ctx, logs);
         if (suspension) {
           next.pendingPrompts.push({
@@ -940,7 +974,7 @@ export function reduce(
       if (prompt.resume && prompt.controller) {
         const source = findInstance(next, prompt.sourceInstanceId ?? "")?.card;
         if (source) {
-          const ctx: EffectContext = { controller: prompt.controller, source, vars: prompt.resume.vars, banished };
+          const ctx: EffectContext = { controller: prompt.controller, source, vars: prompt.resume.vars, banished, events: makeEvents(next, logs, effects, banished) };
           let steps = prompt.resume.steps;
           let inject = action.targetInstanceId;
           const lead = steps[0];
