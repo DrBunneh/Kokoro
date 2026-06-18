@@ -482,7 +482,10 @@ function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel 
       {head}
       {prompt.pick === "deck" ? (
         <div className="space-y-1">
-          <p className="text-amber-200">Tap a card to keep it in your hand:</p>
+          <div className="flex items-center justify-between">
+            <p className="text-amber-200">Tap a card to keep it in your hand:</p>
+            <button onClick={() => dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id })} className="rounded bg-white/10 px-2 py-1">Done</button>
+          </div>
           <div className="flex gap-1 overflow-x-auto">
             {(prompt.reveal ?? []).map((id) => {
               const c = state.players[prompt.player].deck.find((x) => x.instanceId === id);

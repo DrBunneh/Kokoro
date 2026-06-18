@@ -730,5 +730,14 @@
       { "do": "draw", "player": "self", "amount": 1 }
     ] }
   ],
+  "musicaldebut": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "rest": "bottom", "optional": true, "keepUpTo": 1, "filter": { "cardType": "song" }, "text": "you may reveal a song from the top 4 and put it into your hand" }] }
+  ],
+  "thatsyourcue": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "rest": "bottom", "optional": true, "keepUpTo": 1, "filter": { "cardType": "character", "maxCost": 2 }, "text": "you may reveal a character with cost 2 or less from the top 4" }] }
+  ],
+  "lookatthisfamily": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 5, "rest": "bottom", "optional": true, "keepUpTo": 2, "filter": { "cardType": "character" }, "text": "you may reveal up to 2 characters from the top 5" }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

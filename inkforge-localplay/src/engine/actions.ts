@@ -27,7 +27,7 @@ import {
   keywordValue,
 } from "./keywords";
 import { banishCard, drawCards, findInstance, type Zone } from "./zones";
-import { classifyTrigger, runSteps, targetMatches, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
+import { classifyTrigger, runSteps, targetMatches, scryMatch, type CardEffects, type EffectContext, type Step, type Trigger } from "./effects/dsl";
 import { cardEffects as defaultCardEffects } from "./effects";
 import { uid } from "@/lib/id";
 
@@ -613,9 +613,20 @@ export function reduce(
             // Yes (a sentinel target) runs on; No (no target) aborts the effect.
             if (action.targetInstanceId == null) steps = [];
           } else if (lead && lead.do === "lookAtTop") {
-            // Keep the chosen revealed card; default to the top card if none/invalid.
-            const top = next.players[prompt.controller].deck.slice(0, lead.count).map((c) => c.instanceId);
-            inject = action.targetInstanceId && top.includes(action.targetInstanceId) ? action.targetInstanceId : top[0];
+            const pd = next.players[prompt.controller].deck;
+            const kept = parseInt(prompt.resume.vars["__scryKept"] ?? "0", 10);
+            const n = parseInt(prompt.resume.vars["__scryN"] ?? String(lead.count), 10);
+            const window = pd.slice(0, Math.max(0, n - kept));
+            const legal = window.filter((c) => scryMatch(c.printed, lead.filter));
+            if (action.targetInstanceId != null) {
+              if (!legal.some((c) => c.instanceId === action.targetInstanceId)) throw new GameError("Not a valid card to keep");
+              inject = action.targetInstanceId;
+            } else {
+              // No pick: stop if allowed (optional, or already kept ≥1); else
+              // force-keep the first legal card so a mandatory scry can't stall.
+              const mustKeep = !(lead.optional ?? false) && kept === 0 && legal.length > 0;
+              inject = mustKeep ? legal[0]!.instanceId : "__scrystop__";
+            }
           } else if (lead && (lead.do === "chooseCharacter" || lead.do === "chooseFromHand")) {
             if (action.targetInstanceId != null) {
               const loc = findInstance(next, action.targetInstanceId);

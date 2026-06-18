@@ -334,6 +334,35 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[2].discard.some((c) => c.instanceId === "weak")).toBe(true);
   });
 
+  it("filtered scry: only a matching card may be kept; non-matching is rejected", () => {
+    const effects: CardEffects = {
+      reveal: [{ trigger: "on_play", steps: [{ do: "lookAtTop", count: 3, rest: "bottom", optional: true, filter: { cardType: "song" } }] }],
+    };
+    // Stack the top of P1's deck: [character, song, character] by instanceId.
+    const lookup: CardLookup = (id) => {
+      if (id === "1-aSONG") return printed(id, { type: "song", inkable: false });
+      return id.includes("-a") ? printed(id, { specialAbilities: [{ name: "Reveal", slug: "reveal", effect: "Look at the top 3, you may reveal a song." }] }) : printed(id);
+    };
+    let g = toPlay(lookup);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    // Force a known top-of-deck order with one song in the middle.
+    const deck = g.players[1].deck;
+    const song = deck.find((c) => c.printed.type === "song") ?? deck[1]!;
+    // Move the song to slot 1 so it's within the top 3.
+    g.players[1].deck = [deck[0]!, song, ...deck.filter((c) => c !== deck[0] && c !== song)];
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts[0]!.pick).toBe("deck");
+    const reveal = g.pendingPrompts[0]!.reveal!;
+    const nonSong = reveal.find((id) => g.players[1].deck.find((c) => c.instanceId === id)!.printed.type !== "song")!;
+    // A non-song can't be kept.
+    expect(() => reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: nonSong }, effects)).toThrow(/valid card to keep/i);
+    // Declining is allowed (optional) — nothing kept, top cards go to bottom.
+    const handBefore = g.players[1].hand.length;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    expect(g.players[1].hand.length).toBe(handBefore); // kept nothing
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

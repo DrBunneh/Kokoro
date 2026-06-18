@@ -31,15 +31,32 @@ export interface TargetFilter {
   subtype?: string;
 }
 
+/** Restricts which revealed deck cards a scry may keep (e.g. "a song card"). */
+export interface ScryFilter {
+  cardType?: CardType;
+  maxCost?: number;
+  subtype?: string;
+}
+
+/** Does a revealed card satisfy a scry filter (used by the keep-picker)? */
+export function scryMatch(card: import("@/data/card-types").PrintedCard, f?: ScryFilter): boolean {
+  if (!f) return true;
+  if (f.cardType && card.type !== f.cardType) return false;
+  if (f.maxCost != null && card.cost > f.maxCost) return false;
+  if (f.subtype && !card.subtypes.some((s) => s.toLowerCase() === f.subtype!.toLowerCase())) return false;
+  return true;
+}
+
 /** A single primitive action. `to`/`target` reference a bound var name or "self". */
 export type Step =
   // Targeting (suspends for a tap; binds the chosen instance to `as`):
   | { do: "chooseCharacter"; as: string; scope?: Scope; text?: string; optional?: boolean; filter?: TargetFilter }
   // Optional "may" gate — suspends for a Yes/No before the steps that follow:
   | { do: "mayConfirm"; text?: string }
-  // Scry: reveal the top `count` of your deck, keep one in hand, send the rest
-  // to the bottom (in revealed order) or your inkwell exerted.
-  | { do: "lookAtTop"; count: number; rest?: "bottom" | "inkwellExerted"; text?: string }
+  // Scry: reveal the top `count` of your deck, keep up to `keepUpTo` (default 1,
+  // optionally filtered) in hand, send the rest to the bottom or inkwell. When
+  // `optional`, the player may keep none.
+  | { do: "lookAtTop"; count: number; rest?: "bottom" | "inkwellExerted"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
   // Banish every character (Be Prepared) — or a scoped subset.
   | { do: "banishAll"; scope?: Scope }
   // Choose a card from your own hand (suspends for a hand tap):
@@ -300,26 +317,45 @@ export function runSteps(
     }
     if (step.do === "lookAtTop") {
       const p = state.players[ctx.controller];
-      if (pending != null) {
-        // `pending` is the chosen card to keep in hand; the rest go to `rest`.
-        const chosenId = pending; pending = undefined;
-        const revealed = p.deck.splice(0, Math.min(step.count, p.deck.length));
-        const keep = revealed.filter((c) => c.instanceId === chosenId);
-        const others = revealed.filter((c) => c.instanceId !== chosenId);
-        // If the chosen id wasn't among the revealed (shouldn't happen), keep the first.
-        if (keep.length === 0 && revealed.length) { keep.push(revealed[0]!); others.shift(); }
-        for (const c of keep) { c.justPlayed = false; c.exerted = false; p.hand.push(c); }
+      const keepUpTo = step.keepUpTo ?? 1;
+      const nsK = "__scryKept", nsN = "__scryN";
+      const moveRest = (windowLen: number) => {
+        const rest = p.deck.splice(0, Math.max(0, windowLen));
         if ((step.rest ?? "bottom") === "inkwellExerted") {
-          for (const c of others) { c.exerted = true; c.justPlayed = true; p.inkwell.push(c); }
+          for (const c of rest) { c.exerted = true; c.justPlayed = true; p.inkwell.push(c); }
         } else {
-          p.deck.push(...others); // to the bottom, in revealed order
+          p.deck.push(...rest); // to the bottom, in revealed order
         }
-        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_DRAWN", message: `Looked at top ${revealed.length}, kept ${keep.length}` }));
+      };
+      if (pending != null) {
+        let kept = parseInt(ctx.vars[nsK] ?? "0", 10);
+        const n = parseInt(ctx.vars[nsN] ?? "0", 10); // originally revealed count
+        if (pending !== "__scrystop__") {
+          const windowLen = n - kept;
+          const idx = p.deck.findIndex((c) => c.instanceId === pending);
+          if (idx >= 0 && idx < windowLen && scryMatch(p.deck[idx]!.printed, step.filter)) {
+            const card = p.deck.splice(idx, 1)[0]!;
+            card.justPlayed = false; card.exerted = false; p.hand.push(card);
+            kept += 1;
+            ctx.vars[nsK] = String(kept);
+          }
+        }
+        const windowLen = n - kept;
+        const moreLegal = p.deck.slice(0, windowLen).some((c) => scryMatch(c.printed, step.filter));
+        if (pending !== "__scrystop__" && kept < keepUpTo && windowLen > 0 && moreLegal) {
+          pending = undefined;
+          return { steps: steps.slice(i), scope: "any", text: step.text, optional: true, pick: "deck", reveal: p.deck.slice(0, windowLen).map((c) => c.instanceId) };
+        }
+        moveRest(windowLen);
+        delete ctx.vars[nsK]; delete ctx.vars[nsN];
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_DRAWN", message: `Scry: kept ${kept} of top ${n}` }));
         continue;
       }
       const top = p.deck.slice(0, step.count);
       if (top.length === 0) continue; // empty deck — nothing to look at
-      return { steps: steps.slice(i), scope: "any", text: step.text, optional: false, pick: "deck", reveal: top.map((c) => c.instanceId) };
+      ctx.vars[nsN] = String(top.length);
+      ctx.vars[nsK] = "0";
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: step.optional ?? false, pick: "deck", reveal: top.map((c) => c.instanceId) };
     }
     applyStep(state, step, ctx, logs);
   }
