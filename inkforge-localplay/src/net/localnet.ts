@@ -133,6 +133,7 @@ export class WsClientTransport implements Transport {
   private openCbs = new Set<() => void>();
 
   readonly url: string;
+  private heartbeat?: ReturnType<typeof setInterval>;
 
   constructor(peer: DiscoveredPeer) {
     // Bracket IPv6 (strip any %scope, which ws:// can't use) so the URL is valid.
@@ -140,12 +141,27 @@ export class WsClientTransport implements Transport {
     this.url = `ws://${h}:${peer.port}`;
     nlog("follower", `opening WebSocket to ${this.url}…`);
     this.ws = new WebSocket(this.url);
+    // While still CONNECTING, log a heartbeat so a silent stall (host
+    // unreachable / hotspot client-isolation) is visibly different from a quick
+    // mixed-content/refused error.
+    let beats = 0;
+    this.heartbeat = setInterval(() => {
+      if (this.ws.readyState === WebSocket.CONNECTING) {
+        beats += 1;
+        nlog("follower", `still connecting after ${beats * 3}s (no response from host yet)`, "warn");
+      } else if (this.heartbeat) {
+        clearInterval(this.heartbeat);
+        this.heartbeat = undefined;
+      }
+    }, 3000);
     this.ws.onopen = () => {
+      if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
       nlog("follower", `WebSocket open to ${this.url}`);
       this.status = "connected";
       this.openCbs.forEach((cb) => cb());
     };
     this.ws.onclose = (e) => {
+      if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
       // The close code/reason is the key clue for "stuck at connecting".
       const before = this.status;
       nlog(
@@ -156,7 +172,7 @@ export class WsClientTransport implements Transport {
       this.status = "closed";
     };
     this.ws.onerror = () => {
-      nlog("follower", `WebSocket error connecting to ${this.url} (check IP/port, same network, firewall)`, "error");
+      nlog("follower", `WebSocket error connecting to ${this.url} (mixed-content block, wrong IP/port, or different network)`, "error");
     };
     this.ws.onmessage = (e) => {
       const data = e.data as string;
@@ -188,6 +204,7 @@ export class WsClientTransport implements Transport {
     return () => this.cbs.delete(cb);
   }
   close(): void {
+    if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
     this.ws.close();
     this.status = "closed";
   }

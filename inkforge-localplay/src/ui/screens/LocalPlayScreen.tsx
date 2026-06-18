@@ -155,10 +155,10 @@ export function LocalPlayScreen() {
     // Don't hang forever if the host is unreachable.
     setTimeout(() => {
       if (!gameRef.current) {
-        nlog("follower", `timed out after 10s connecting to ${peer.host}:${peer.port} (socket state: ${t.status})`, "error");
+        nlog("follower", `timed out after 10s connecting to ${peer.host}:${peer.port} (socket state: ${t.status}). If it never errored, the host is unreachable — likely hotspot "client isolation" blocking phone-to-phone traffic. Try a normal WiFi router.`, "error");
         t.close();
         transportRef.current = null;
-        setStatus(`Couldn't reach ${peer.host}:${peer.port}. Try “Connect by IP” with the address shown on the host.`);
+        setStatus(`Couldn't reach ${peer.host}:${peer.port}. If this keeps happening on a phone hotspot, it's likely "client isolation" — try a normal WiFi router, or Connect by IP.`);
         setPhase("joining");
       }
     }, 10000);

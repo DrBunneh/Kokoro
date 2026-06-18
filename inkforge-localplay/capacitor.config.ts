@@ -5,8 +5,10 @@ const config: CapacitorConfig = {
   appName: "InkForge LocalPlay",
   webDir: "dist",
   android: {
-    // Allow the app to run fully offline; no cleartext needed (images are HTTPS).
-    allowMixedContent: false,
+    // The app is served over https://localhost, so the follower's plain
+    // ws:// connection to the host is "mixed content" — the WebView blocks it
+    // (silent hang) unless mixed content is allowed. Required for LAN play.
+    allowMixedContent: true,
   },
   plugins: {
     // OTA web-bundle updates are driven manually by the homepage Update button.
