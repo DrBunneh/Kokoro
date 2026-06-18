@@ -35,6 +35,10 @@ export interface StaticDef {
   perOtherSubtype?: string;
   /** Scale with the number of items the controller has in play (Tamatoa — glam). */
   perItem?: boolean;
+  /** Scale with the number of cards under the source (Shift stack — Genie, Scrooge). */
+  perCardUnder?: boolean;
+  /** Only while there's at least one card under the source (Hercules-Spectral, Flynn). */
+  whileHasCardUnder?: boolean;
   /** Only while the source is exerted (Pete - Space Pirate). */
   whileExerted?: boolean;
   /** Only during the opponents' turns (Snow Fort "Barricade"). */
@@ -128,6 +132,7 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
         if (def.whileSelfUndamaged && src.damage > 0) continue;
         if (def.whileOtherCharsAtLeast != null && otherChars(state, srcOwner, src, def.otherSubtype) < def.whileOtherCharsAtLeast) continue;
         if (def.whileControllerHasSubtype && !state.players[srcOwner].field.some((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => s.toLowerCase() === def.whileControllerHasSubtype!.toLowerCase()))) continue;
+        if (def.whileHasCardUnder && src.cardsUnder.length === 0) continue;
         if (!applies(def, src, srcOwner, card, tgtOwner)) continue;
         const scale = def.perDiscard
           ? state.players[srcOwner].discard.length
@@ -137,7 +142,9 @@ export function statMods(state: GameState, card: CardInstance): StatMods {
               ? otherChars(state, srcOwner, src)
               : def.perOtherSubtype
                 ? otherChars(state, srcOwner, src, def.perOtherSubtype)
-                : 1;
+                : def.perCardUnder
+                  ? src.cardsUnder.length
+                  : 1;
         if (def.strength) strength += def.strength * scale;
         if (def.willpower) willpower += def.willpower * scale;
         if (def.lore) lore += def.lore * scale;

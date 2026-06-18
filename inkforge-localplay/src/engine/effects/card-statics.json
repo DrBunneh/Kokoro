@@ -20,5 +20,10 @@
   "standshisground": [],
   "recordtime": [],
   "spikesuit": [],
+  "increasingwisdom": [{ "scope": "self", "lore": 1, "perCardUnder": true }],
+  "countingcoins": [{ "scope": "self", "strength": 1, "willpower": 1, "perCardUnder": true }],
+  "superhumanstrength": [{ "scope": "self", "strength": 3, "whileHasCardUnder": true }],
+  "illtakethat": [{ "scope": "self", "strength": 2, "lore": 1, "whileHasCardUnder": true }],
+  "goodbusiness": [{ "scope": "self", "willpower": 1, "lore": 1, "perCardUnder": true }],
   "$schema": "slug -> StaticDef[] (continuous modifiers). slugs use build-card-db slugify."
 }

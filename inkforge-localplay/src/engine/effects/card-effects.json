@@ -1432,5 +1432,11 @@
       { "do": "debuff", "to": "t", "strength": 1, "duration": "end_of_turn" }
     ] }
   ],
+  "letsride": [
+    { "trigger": "cost", "reduce": 1, "when": { "haveCharacterNamedAny": ["Woody", "Jessie"] } }
+  ],
+  "rejectedtoys": [
+    { "trigger": "cost", "reduceSubtypeInDiscard": "Toy" }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

@@ -77,6 +77,22 @@ describe("Wave 3 — scaling & gated statics", () => {
     expect(effectiveLore(withVillain, d)).toBe(2);
   });
 
+  it("Scrooge 'countingcoins': +1 {S}/+1 {W} per card under (Shift stack)", () => {
+    const under = [inst("u1", printed()), inst("u2", printed())];
+    const scrooge = inst("sc", printed({ strength: 3, willpower: 4, specialAbilities: SA("countingcoins") }), { cardsUnder: under });
+    const g = state({ field: [scrooge] });
+    expect(effectiveStrength(g, scrooge)).toBe(3 + 2);
+    expect(effectiveWillpower(g, scrooge)).toBe(4 + 2);
+  });
+
+  it("Hercules 'superhumanstrength': +3 {S} only while a card is under him", () => {
+    const herc = inst("h", printed({ strength: 4, specialAbilities: SA("superhumanstrength") }));
+    const bare = state({ field: [herc] });
+    expect(effectiveStrength(bare, herc)).toBe(4);
+    herc.cardsUnder = [inst("u", printed())];
+    expect(effectiveStrength(bare, herc)).toBe(7);
+  });
+
   it("Mickey 'leadingtheway': other Amber characters get +2 {W} (not self)", () => {
     const mickey = inst("m", printed({ colors: ["amber"], willpower: 5, specialAbilities: SA("leadingtheway") }));
     const amberAlly = inst("a", printed({ colors: ["amber"], willpower: 2 }));

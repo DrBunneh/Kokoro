@@ -149,6 +149,10 @@ function selfCostReduction(state: GameState, p: PlayerState, source: CardInstanc
       total += def.reduce ?? 0;
       if (def.reducePer === "actionInDiscard") total += p.discard.filter((c) => c.printed.type === "action" || c.printed.type === "song").length;
       else if (def.reducePer === "characterInPlay") total += p.field.filter((c) => c.printed.type === "character").length;
+      if (def.reduceSubtypeInDiscard) {
+        const want = def.reduceSubtypeInDiscard.toLowerCase();
+        total += p.discard.filter((c) => c.printed.type === "character" && c.printed.subtypes.some((s) => s.toLowerCase() === want)).length;
+      }
     }
   }
   return total;
@@ -228,6 +232,10 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.haveCharacterNamed) {
     const want = when.haveCharacterNamed.toLowerCase();
     if (!p.field.some((c) => c.printed.name.toLowerCase() === want)) return false;
+  }
+  if (when.haveCharacterNamedAny) {
+    const wants = when.haveCharacterNamedAny.map((n) => n.toLowerCase());
+    if (!p.field.some((c) => wants.includes(c.printed.name.toLowerCase()))) return false;
   }
   if (when.firstTurnNotFirstPlayer && !(controller !== state.firstPlayer && state.turnNumber <= 2)) return false;
   const last = played[played.length - 1];

@@ -49,6 +49,8 @@ export interface Condition {
   exertedAlliesAtLeast?: number;
   /** You have a character with this name in play. */
   haveCharacterNamed?: string;
+  /** You have a character with one of these names in play (Bullseye — Woody/Jessie). */
+  haveCharacterNamedAny?: string[];
   /** It's your first turn and you're not the first player. */
   firstTurnNotFirstPlayer?: boolean;
   /** The most-recently-played card this turn is of this type (for on_play_cheap). */
@@ -193,6 +195,8 @@ export interface EffectDef {
   reduce?: number;
   /** For trigger "cost": reduction that scales with a count. */
   reducePer?: "actionInDiscard" | "characterInPlay";
+  /** For trigger "cost": reduction that scales with characters of this subtype in your discard (Bouncing Ducky — Toy). */
+  reduceSubtypeInDiscard?: string;
 }
 
 export type CardEffects = Record<string, EffectDef[]>;
