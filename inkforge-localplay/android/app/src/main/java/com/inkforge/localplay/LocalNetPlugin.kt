@@ -118,6 +118,9 @@ class LocalNetPlugin : Plugin() {
             serviceName = name
             serviceType = this@LocalNetPlugin.serviceType
             setPort(port)
+            // Advertise every local IPv4 so a follower on a multi-homed host can
+            // try each interface (hotspot vs. VPN/cellular) and reach a live one.
+            try { setAttribute("ips", localIpv4().joinToString(",")) } catch (_: Exception) {}
         }
         val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(arg0: NsdServiceInfo) { log("NSD advertised as \"${arg0.serviceName}\" on port $port") }
@@ -197,11 +200,26 @@ class LocalNetPlugin : Plugin() {
             }
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 val host = pickHost(serviceInfo)
-                log("resolved \"${serviceInfo.serviceName}\" -> $host:${serviceInfo.port}")
+                // Collect every candidate address: the advertised "ips" attribute
+                // (all host interfaces) plus whatever NSD resolved.
+                val cand = LinkedHashSet<String>()
+                if (host.isNotEmpty()) cand.add(host)
+                try {
+                    serviceInfo.attributes?.get("ips")?.let { String(it).split(",") }?.forEach { ip ->
+                        ip.trim().takeIf { it.isNotEmpty() }?.let { cand.add(it) }
+                    }
+                } catch (_: Exception) {}
+                try {
+                    if (Build.VERSION.SDK_INT >= 34) serviceInfo.hostAddresses.forEach { a -> a.hostAddress?.let { cand.add(it) } }
+                } catch (_: Exception) {}
+                log("resolved \"${serviceInfo.serviceName}\" -> ${cand.joinToString(", ")}:${serviceInfo.port}")
                 val o = JSObject()
                 o.put("name", serviceInfo.serviceName)
                 o.put("host", host)
                 o.put("port", serviceInfo.port)
+                val addrs = JSArray()
+                for (ip in cand) addrs.put(ip)
+                o.put("addresses", addrs)
                 emit("peerFound", o)
                 synchronized(resolveQueue) { resolving = false }
                 resolveNext()

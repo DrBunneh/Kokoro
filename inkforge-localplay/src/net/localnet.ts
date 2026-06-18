@@ -21,6 +21,8 @@ export interface DiscoveredPeer {
   name: string;
   host: string;
   port: number;
+  /** All candidate host addresses (multi-homed hosts); tried in order. */
+  addresses?: string[];
 }
 
 export interface LocalNetPlugin {
@@ -124,57 +126,76 @@ export class HostTransport implements Transport {
   }
 }
 
-/** Follower side: a plain JS WebSocket to the discovered host. */
+const bracketHost = (h: string): string => (h.includes(":") ? `[${h.replace(/%.*$/, "")}]` : h);
+
+/**
+ * Follower side: a plain JS WebSocket to the host. A multi-homed host advertises
+ * several addresses (hotspot vs. VPN/cellular); we try each in turn with a short
+ * per-address timeout, so we don't get stuck dialing an unreachable interface.
+ */
 export class WsClientTransport implements Transport {
   readonly role = "follower" as const;
   status: Transport["status"] = "connecting";
-  private ws: WebSocket;
+  private ws: WebSocket | null = null;
   private cbs = new Set<(m: NetMsg) => void>();
   private openCbs = new Set<() => void>();
-
+  private candidates: string[];
+  private perAddrTimer?: ReturnType<typeof setTimeout>;
+  private closed = false;
   readonly url: string;
-  private heartbeat?: ReturnType<typeof setInterval>;
 
   constructor(peer: DiscoveredPeer) {
-    // Bracket IPv6 (strip any %scope, which ws:// can't use) so the URL is valid.
-    const h = peer.host.includes(":") ? `[${peer.host.replace(/%.*$/, "")}]` : peer.host;
-    this.url = `ws://${h}:${peer.port}`;
-    nlog("follower", `opening WebSocket to ${this.url}…`);
-    this.ws = new WebSocket(this.url);
-    // While still CONNECTING, log a heartbeat so a silent stall (host
-    // unreachable / hotspot client-isolation) is visibly different from a quick
-    // mixed-content/refused error.
-    let beats = 0;
-    this.heartbeat = setInterval(() => {
-      if (this.ws.readyState === WebSocket.CONNECTING) {
-        beats += 1;
-        nlog("follower", `still connecting after ${beats * 3}s (no response from host yet)`, "warn");
-      } else if (this.heartbeat) {
-        clearInterval(this.heartbeat);
-        this.heartbeat = undefined;
-      }
-    }, 3000);
-    this.ws.onopen = () => {
-      if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
-      nlog("follower", `WebSocket open to ${this.url}`);
+    const hosts = [peer.host, ...(peer.addresses ?? [])].filter(Boolean);
+    // De-dupe while preserving order; build ws URLs (IPv6 bracketed).
+    this.candidates = [...new Set(hosts)].map((h) => `ws://${bracketHost(h)}:${peer.port}`);
+    this.url = this.candidates[0] ?? `ws://${bracketHost(peer.host)}:${peer.port}`;
+    if (this.candidates.length > 1) nlog("follower", `host has ${this.candidates.length} addresses; will try each in turn`);
+    this.tryNext(0);
+  }
+
+  private tryNext(i: number): void {
+    if (this.closed) return;
+    if (i >= this.candidates.length) {
+      nlog("follower", `couldn't reach the host on any of its ${this.candidates.length} address(es)`, "error");
+      this.status = "closed";
+      return;
+    }
+    const url = this.candidates[i]!;
+    nlog("follower", `opening WebSocket to ${url} (${i + 1}/${this.candidates.length})…`);
+    let settled = false;
+    const ws = new WebSocket(url);
+    this.ws = ws;
+    const advance = (why: string, level: "warn" | "error" = "warn") => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(this.perAddrTimer);
+      nlog("follower", `${url}: ${why}`, level);
+      try { ws.close(); } catch { /* ignore */ }
+      this.tryNext(i + 1);
+    };
+    // ~4s per address before moving on to the next interface.
+    this.perAddrTimer = setTimeout(() => advance("no response in 4s, trying next address"), 4000);
+    ws.onopen = () => {
+      if (settled || this.closed) { try { ws.close(); } catch { /* ignore */ } return; }
+      settled = true;
+      clearTimeout(this.perAddrTimer);
+      nlog("follower", `WebSocket open to ${url}`);
       this.status = "connected";
       this.openCbs.forEach((cb) => cb());
     };
-    this.ws.onclose = (e) => {
-      if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
-      // The close code/reason is the key clue for "stuck at connecting".
-      const before = this.status;
-      nlog(
-        "follower",
-        `WebSocket closed (code ${e.code}${e.reason ? `, "${e.reason}"` : ""}, ${e.wasClean ? "clean" : "unclean"})${before === "connecting" ? " — never opened, host unreachable or refused" : ""}`,
-        before === "connected" ? "warn" : "error",
-      );
-      this.status = "closed";
+    ws.onclose = (e) => {
+      if (this.status === "connected" && this.ws === ws) {
+        nlog("follower", `WebSocket closed (code ${e.code}${e.reason ? `, "${e.reason}"` : ""}, ${e.wasClean ? "clean" : "unclean"})`, "warn");
+        this.status = "closed";
+        return;
+      }
+      advance(`closed before opening (code ${e.code}${e.wasClean ? "" : ", unclean"})`);
     };
-    this.ws.onerror = () => {
-      nlog("follower", `WebSocket error connecting to ${this.url} (mixed-content block, wrong IP/port, or different network)`, "error");
+    ws.onerror = () => {
+      // onerror is immediately followed by onclose; just note it.
+      if (!settled) nlog("follower", `${url}: connection error (unreachable, refused, or mixed-content block)`, "warn");
     };
-    this.ws.onmessage = (e) => {
+    ws.onmessage = (e) => {
       const data = e.data as string;
       try {
         const m = JSON.parse(data) as NetMsg;
@@ -192,11 +213,11 @@ export class WsClientTransport implements Transport {
     return () => this.openCbs.delete(cb);
   }
   send(msg: NetMsg): void {
-    if (this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       nlog("follower", `send ${msg.t}`);
       this.ws.send(JSON.stringify(msg));
     } else {
-      nlog("follower", `cannot send ${msg.t} — socket not open (state ${this.ws.readyState})`, "warn");
+      nlog("follower", `cannot send ${msg.t} — socket not open`, "warn");
     }
   }
   onReceive(cb: (m: NetMsg) => void): () => void {
@@ -204,8 +225,9 @@ export class WsClientTransport implements Transport {
     return () => this.cbs.delete(cb);
   }
   close(): void {
-    if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
-    this.ws.close();
+    this.closed = true;
+    clearTimeout(this.perAddrTimer);
+    try { this.ws?.close(); } catch { /* ignore */ }
     this.status = "closed";
   }
 }

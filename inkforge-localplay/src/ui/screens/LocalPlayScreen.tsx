@@ -152,16 +152,17 @@ export function LocalPlayScreen() {
     const t = new WsClientTransport(peer);
     transportRef.current = t;
     wireFollower(t);
-    // Don't hang forever if the host is unreachable.
+    // Allow ~4s per candidate address (multi-homed hosts) before giving up.
+    const cap = Math.max(10000, ([peer.host, ...(peer.addresses ?? [])].length) * 4500 + 2000);
     setTimeout(() => {
       if (!gameRef.current) {
-        nlog("follower", `timed out after 10s connecting to ${peer.host}:${peer.port} (socket state: ${t.status}). If it never errored, the host is unreachable — likely hotspot "client isolation" blocking phone-to-phone traffic. Try a normal WiFi router.`, "error");
+        nlog("follower", `timed out after ${Math.round(cap / 1000)}s (socket state: ${t.status}). If no address ever opened, the devices can't reach each other — likely hotspot "client isolation". Try a normal WiFi router.`, "error");
         t.close();
         transportRef.current = null;
-        setStatus(`Couldn't reach ${peer.host}:${peer.port}. If this keeps happening on a phone hotspot, it's likely "client isolation" — try a normal WiFi router, or Connect by IP.`);
+        setStatus(`Couldn't reach ${peer.name}. If this keeps happening on a phone hotspot, it's likely "client isolation" — try a normal WiFi router, or Connect by IP.`);
         setPhase("joining");
       }
-    }, 10000);
+    }, cap);
   }
 
   if (loaded && decks.length === 0) {
