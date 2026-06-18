@@ -4,3 +4,6 @@
 !.dev.vars.example
 .env*
 !.env.example
+
+# stray dep/cache dirs (project lives in inkforge-localplay/)
+node_modules/
