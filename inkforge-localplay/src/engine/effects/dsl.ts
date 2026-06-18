@@ -91,6 +91,8 @@ export interface Condition {
   selfHasCardUnder?: boolean;
   /** One of your own Toy characters was banished this turn (Wind-Up Frog). */
   ownToyBanishedThisTurn?: boolean;
+  /** An opponent has more cards in their inkwell than you (Webby - Junior Prospector). */
+  opponentInkwellMoreThanYou?: boolean;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -206,6 +208,8 @@ export type Step =
   | { do: "drawTo"; player?: Who; count: number }
   // Choose and discard from your own hand `amount` (or per-count) cards:
   | { do: "discardChoose"; amount?: number; amountPer?: AmountPer; text?: string }
+  // Put the top card of your deck into your inkwell (Webby - Junior Prospector):
+  | { do: "putTopToInkwell"; exerted?: boolean }
   // Play the source card from your discard into play (Lilo - Escape Artist):
   | { do: "playFromDiscard"; exerted?: boolean }
   // Play ANOTHER card (from hand or discard) into play for free (Lady - Family Dog,
@@ -645,6 +649,16 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       for (const pid of targets) {
         drawCards(state.players[pid], n);
         logs.push(makeLog({ turnNumber: state.turnNumber, player: pid, type: "CARD_DRAWN", message: `Draw ${n}` }));
+      }
+      break;
+    }
+    case "putTopToInkwell": {
+      const p = state.players[ctx.controller];
+      const card = p.deck.shift();
+      if (card) {
+        card.exerted = step.exerted ?? true; card.justPlayed = true; card.appliedEffects = []; card.damage = 0;
+        p.inkwell.push(card);
+        logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_PUT_INTO_INKWELL", message: `Put the top card into inkwell`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       }
       break;
     }

@@ -1540,5 +1540,26 @@
       { "do": "moveDamage", "from": "t", "to": "self", "amount": 1 }
     ] }
   ],
+  "worksmarter": [
+    { "trigger": "on_quest", "when": { "opponentInkwellMoreThanYou": true }, "steps": [
+      { "do": "mayConfirm", "text": "put the top card of your deck into your inkwell?" },
+      { "do": "putTopToInkwell", "exerted": true }
+    ] }
+  ],
+  "letsgohome": [
+    { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 4, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "subtype": "Toy" } }] }
+  ],
+  "splenderifficbounce": [
+    { "trigger": "on_play", "steps": [{ "do": "modal", "options": [
+      { "label": "Return a character (cost 2 or less) to hand", "steps": [
+        { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "filter": { "maxCost": 2 }, "text": "return to hand" },
+        { "do": "returnToHand", "to": "t" }
+      ] },
+      { "label": "Return an item to hand", "steps": [
+        { "do": "chooseItem", "as": "i", "scope": "any", "optional": true, "text": "return to hand" },
+        { "do": "returnToHand", "to": "i" }
+      ] }
+    ] }] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

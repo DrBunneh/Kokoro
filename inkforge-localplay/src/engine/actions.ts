@@ -277,6 +277,7 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
   if (when.banishedMine && ev?.banishedOwner !== controller) return false;
   if (when.selfHasCardUnder && source.cardsUnder.length === 0) return false;
   if (when.ownToyBanishedThisTurn && !p.ownToyBanishedThisTurn) return false;
+  if (when.opponentInkwellMoreThanYou && state.players[otherPlayer(controller)].inkwell.length <= p.inkwell.length) return false;
   return true;
 }
 
