@@ -49,19 +49,30 @@ discard-your-hand), keyword grants, exert/exert-all, draw-to-N, move-damage,
 banish-item, put-to-inkwell / bottom-of-deck (single + filtered-all), return
 from discard, lockout, extra-ink, and modal "choose one".
 
-## Deferred (still surface as Manual-Mode prompts, never silently no-op)
-These need heavier engine work; uncovered on_play/quest/challenge/banish text
-still pops a prompt so play continues:
-- **Turn-phase triggers**: `start_of_turn` / `end_of_turn` aren't fired yet, so
-  Beast, Elinor, Namaari's start-of-turn half, Cinderella - Dream don't auto-fire.
-- **Condition predicates**: "if you played a Princess", "if 2+ cards discarded",
-  "if no damage", "first turn" — these on_play cards surface manually.
-- **Triggered statics**: "whenever you play a song/action", "whenever you draw",
-  "whenever this is challenged", "whenever an item is banished" (Maui Wayfinding,
-  The Muses, Prince John, Cursed Merfolk, Archimedes' 2nd, Royal Guard, Ariel-Sonic).
-- **Self-cost reduction**: Olaf, Liquidator, Tramp, Grandmother Willow, LeFou,
-  Belle-Apprentice (banish own item to play free).
-- **Conditional draw / count-lore**: Rapunzel (draw per damage removed),
-  Mulan (lore = strength).
+## Now automated (added since)
+- **Turn-phase triggers**: `start_of_turn` + `end_of_turn` fire (end-of-turn
+  resolves before the turn passes) — Beast, Elinor, Namaari, Cinderella - Dream.
+- **Condition gates** (`when`): playedType/Subtype, discardedAtLeast,
+  selfUndamaged/Damaged, exertedAlliesAtLeast, haveCharacterNamed,
+  firstTurnNotFirstPlayer — Leviathan, Cinderella, Beast, Liquidator, LeFou, Tramp.
+- **Event-triggered statics**: `on_play_action` / `on_play_song` (Maui Wayfinding,
+  The Muses) and `on_challenged` (Cursed Merfolk).
+- **Self-cost reduction** (`cost` trigger, flat / per-action-in-discard / gated):
+  Olaf, Liquidator, LeFou, Tramp.
+- **Conditional draw / count-lore**: Rapunzel (`removeDamageDraw`), Mulan
+  (`gainLoreByStrength`).
+
+## Still deferred — passive/continuous (no Manual-Mode prompt; just unmodelled math)
+These never pop a prompt (they classify as static), so they don't block "0 manual
+mode"; they need a continuous-effects layer (stat recompute across permanents):
+- **Continuous stat statics**: Snow Fort (+1 ⛉ to your characters), Namaari
+  (+1 ⛉ per card in discard), Hades (+1 ◊ per Villain).
 - **Combat/keyword statics not in the keyword engine**: Dale (challenge uses {W}),
-  Lilo (first-hit immunity), Demona "can't ready", Vanish, Boost, Snow Fort buffs.
+  Lilo (first-hit immunity), Demona "can't ready", Vanish, Boost.
+
+## Niche event triggers still unmodelled (classify static → no prompt)
+"Whenever you draw" (Royal Guard, Diablo - Devoted Herald, Ariel - Ethereal),
+"whenever an item is banished" (Archimedes' 2nd), "whenever your opponent
+discards" (Prince John), "whenever this song deals…" (Ariel - Sonic Warrior),
+Boost, "Once during your turn …" (Grandmother Willow), and Belle - Apprentice's
+"banish your own item to play this free" (an alternate cost).
