@@ -37,6 +37,7 @@ export type Action =
   | { type: "ADD_TO_INK"; cardInstanceId: string }
   | { type: "PLAY_CARD"; cardInstanceId: string; shiftOnto?: string; singers?: string[] }
   | { type: "QUEST"; cardInstanceId: string }
+  | { type: "ACTIVATE_ABILITY"; cardInstanceId: string; slug?: string }
   | { type: "ATTACK"; attackerId: string; defenderId: string }
   | { type: "RESPOND_TO_PROMPT"; promptId: string; targetInstanceId?: string }
   | { type: "MANUAL_ADJUST"; ops: ManualOp[] }
@@ -148,6 +149,8 @@ function payInk(p: PlayerState, cost: number): void {
  * prompts. This is the bag (spec §4.6, §7): the engine blocks normal actions
  * while prompts are pending.
  */
+type BanishRef = { card: CardInstance; owner: PlayerId };
+
 function fireTrigger(
   state: GameState,
   trigger: Trigger,
@@ -156,14 +159,17 @@ function fireTrigger(
   logs: LogEntry[],
   effects: CardEffects,
   surfaceManual: boolean,
+  banished?: BanishRef[],
+  onlySlug?: string,
 ): void {
   for (const sa of source.printed.specialAbilities) {
+    if (onlySlug && sa.slug !== onlySlug) continue;
     const defs = effects[sa.slug] ?? [];
     const matching = defs.filter((d) => d.trigger === trigger);
 
     if (matching.length > 0) {
       for (const def of matching) {
-        const ctx: EffectContext = { controller, source, vars: {} };
+        const ctx: EffectContext = { controller, source, vars: {}, banished };
         const suspension = runSteps(state, def.steps, ctx, logs);
         if (suspension) {
           state.pendingPrompts.push({
@@ -197,6 +203,31 @@ function fireTrigger(
       });
     }
   }
+}
+
+/**
+ * Fire `on_banish` for each banished card, draining the queue. on_banish effects
+ * may themselves banish more cards (chains), so we loop until the queue empties.
+ * The banished card is its own effect source (its slug abilities are read off
+ * `printed`), so it resolves correctly even though it now sits in discard.
+ */
+function drainBanish(state: GameState, queue: BanishRef[], logs: LogEntry[], effects: CardEffects): void {
+  let guard = 0;
+  while (queue.length > 0 && guard++ < 64) {
+    const { card, owner } = queue.shift()!;
+    fireTrigger(state, "on_banish", card, owner, logs, effects, true, queue);
+  }
+}
+
+/** Parse the cost of an activated ability from the text before its em dash. */
+function parseActivationCost(effect: string): { exert: boolean; ink: number; banishSelf: boolean } {
+  const head = effect.split("—")[0] ?? "";
+  const inkMatch = head.match(/(\d+)\s*\{i\}/i);
+  return {
+    exert: /\{e\}/i.test(head),
+    ink: inkMatch ? parseInt(inkMatch[1]!, 10) : 0,
+    banishSelf: /banish this/i.test(head),
+  };
 }
 
 /** Begin a player's turn: ready/set/draw. The first player skips the very first draw. */
@@ -241,7 +272,7 @@ function checkLoreWin(state: GameState, logs: LogEntry[]): void {
   }
 }
 
-const BAG_BLOCKED = new Set(["ADD_TO_INK", "PLAY_CARD", "QUEST", "ATTACK", "END_TURN"]);
+const BAG_BLOCKED = new Set(["ADD_TO_INK", "PLAY_CARD", "QUEST", "ACTIVATE_ABILITY", "ATTACK", "END_TURN"]);
 
 /** Pure rules reducer. Returns the next state and logs; throws on illegal actions. */
 export function reduce(
@@ -256,6 +287,9 @@ export function reduce(
   }
   const next = clone(state);
   const logs: LogEntry[] = [];
+  // Cards banished during this action; their on_banish triggers fire after the
+  // primary resolution (drained in the relevant branches below).
+  const banished: BanishRef[] = [];
 
   switch (action.type) {
     case "CHOOSE_STARTING_PLAYER": {
@@ -344,7 +378,8 @@ export function reduce(
         const fi = p.field.indexOf(base);
         p.field.splice(fi, 1, card);
         logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} shifted ${card.printed.fullName} onto ${base.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
-        fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true);
+        fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
+        drainBanish(next, banished, logs, effects);
         return { state: next, logs };
       }
 
@@ -364,7 +399,8 @@ export function reduce(
         p.hand.splice(idx, 1);
         p.discard.push(card);
         logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} sang ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
-        fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true);
+        fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
+        drainBanish(next, banished, logs, effects);
         return { state: next, logs };
       }
 
@@ -396,7 +432,8 @@ export function reduce(
           break;
       }
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_PLAYED", message: `${p.name} played ${card.printed.fullName}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
-      fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true);
+      fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
+      drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
 
@@ -413,7 +450,7 @@ export function reduce(
       p.lore += gained;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
-      fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, true);
+      fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, true, banished);
       // Support (rules §10.13): add this character's {S} to another chosen one.
       if (hasKeyword(card, "Support")) {
         const amount = effectiveStrength(card);
@@ -421,7 +458,7 @@ export function reduce(
           { do: "chooseCharacter", as: "ally", scope: "ally", text: `add +${amount} ¤ to another character this turn` },
           { do: "buff", to: "ally", strength: amount, duration: "end_of_turn" },
         ];
-        const ctx: EffectContext = { controller: next.currentPlayer, source: card, vars: {} };
+        const ctx: EffectContext = { controller: next.currentPlayer, source: card, vars: {}, banished };
         const suspension = runSteps(next, steps, ctx, logs);
         if (suspension) {
           next.pendingPrompts.push({
@@ -437,6 +474,40 @@ export function reduce(
           });
         }
       }
+      drainBanish(next, banished, logs, effects);
+      return { state: next, logs };
+    }
+
+    case "ACTIVATE_ABILITY": {
+      if (next.status !== "playing") throw new GameError("Not in play");
+      const p = next.players[next.currentPlayer];
+      const source = [...p.field, ...p.items].find((c) => c.instanceId === action.cardInstanceId);
+      if (!source) throw new GameError("Card not in play");
+      const sa = source.printed.specialAbilities.find(
+        (a) => (action.slug ? a.slug === action.slug : true) && classifyTrigger(a.effect, source.printed.type) === "activated",
+      );
+      if (!sa) throw new GameError("No activated ability to use");
+
+      const cost = parseActivationCost(sa.effect);
+      // Exert cost: the source must be ready, and a drying character can't exert.
+      if (cost.exert) {
+        if (source.exerted) throw new GameError("Source is already exerted");
+        if (source.printed.type === "character" && source.justPlayed) throw new GameError("Character is drying");
+      }
+      if (cost.ink > 0 && readyInk(p).length < cost.ink) throw new GameError("Not enough ink");
+
+      // Pay the cost.
+      if (cost.exert) source.exerted = true;
+      if (cost.ink > 0) payInk(p, cost.ink);
+      if (cost.banishSelf) {
+        banishCard(p, source, logs, next.turnNumber);
+        banished.push({ card: source, owner: next.currentPlayer });
+      }
+      logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "ABILITY_TRIGGERED", message: `${p.name} activated ${sa.name}`, cardRefs: [{ id: source.printed.id, name: source.printed.fullName }] }));
+
+      // Resolve only this ability's effect (or surface it for Manual Mode).
+      fireTrigger(next, "activated", source, next.currentPlayer, logs, effects, true, banished, sa.slug);
+      drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
 
@@ -476,8 +547,9 @@ export function reduce(
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_ATTACK", message: `${attacker.printed.fullName} challenged ${defender.printed.fullName}`, cardRefs: [{ id: attacker.printed.id, name: attacker.printed.fullName }, { id: defender.printed.id, name: defender.printed.fullName }] }));
 
       // Banish anything that took lethal damage (simultaneous).
-      if (isBanished(defender)) banishCard(dp, defender, logs, next.turnNumber);
-      if (isBanished(attacker)) banishCard(ap, attacker, logs, next.turnNumber);
+      if (isBanished(defender)) { banishCard(dp, defender, logs, next.turnNumber); banished.push({ card: defender, owner: otherPlayer(next.currentPlayer) }); }
+      if (isBanished(attacker)) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); }
+      drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
 
@@ -489,7 +561,7 @@ export function reduce(
       if (prompt.resume && prompt.controller) {
         const source = findInstance(next, prompt.sourceInstanceId ?? "")?.card;
         if (source) {
-          const ctx: EffectContext = { controller: prompt.controller, source, vars: prompt.resume.vars };
+          const ctx: EffectContext = { controller: prompt.controller, source, vars: prompt.resume.vars, banished };
           // The follow-up may itself need another choice → re-suspend a prompt.
           const again = runSteps(next, prompt.resume.steps, ctx, logs, action.targetInstanceId);
           if (again) {
@@ -507,6 +579,7 @@ export function reduce(
           }
         }
       }
+      drainBanish(next, banished, logs, effects);
       logs.push(log({ turnNumber: next.turnNumber, player: prompt.player, type: "CHOICE_RESOLVED", message: `Resolved: ${prompt.text}` }));
       return { state: next, logs };
     }

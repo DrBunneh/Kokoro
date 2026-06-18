@@ -5,10 +5,16 @@ import { useGame } from "@/state/useGame";
 import { useCardDb } from "@/ui/hooks/useCardDb";
 import { CardThumb } from "@/ui/components/CardThumb";
 import { hasKeyword, keywordValue } from "@/engine/keywords";
+import { classifyTrigger } from "@/engine/effects/dsl";
 import { cn } from "@/lib/cn";
 import type { CardInstance, GameState, PlayerId } from "@/engine/state";
 
 const other = (p: PlayerId): PlayerId => (p === 1 ? 2 : 1);
+
+/** The card's first activated ({E}/ink/banish-cost) ability, if any. */
+function activatedAbility(card: CardInstance) {
+  return card.printed.specialAbilities.find((a) => classifyTrigger(a.effect, card.printed.type) === "activated");
+}
 
 export function HotSeatScreen() {
   const navigate = useNavigate();
@@ -225,6 +231,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
 
   const [selHand, setSelHand] = useState<string | null>(null);
   const [selField, setSelField] = useState<string | null>(null);
+  const [selItem, setSelItem] = useState<string | null>(null);
   const [attacker, setAttacker] = useState<string | null>(null);
   const [curtain, setCurtain] = useState(false);
   const [manualSel, setManualSel] = useState<string | null>(null);
@@ -245,10 +252,14 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
   const selectedChar = meP.field.find((c) => c.instanceId === selField);
   const canQuestSel = !!selectedChar && selectedChar.printed.type === "character" && !selectedChar.exerted && !selectedChar.justPlayed && (selectedChar.printed.lore ?? 0) > 0;
   const canAttackSel = !!selectedChar && selectedChar.printed.type === "character" && !selectedChar.exerted && (!selectedChar.justPlayed || hasKeyword(selectedChar, "Rush"));
+  const charAbility = selectedChar ? activatedAbility(selectedChar) : undefined;
+  const selectedItem = meP.items.find((c) => c.instanceId === selItem);
+  const itemAbility = selectedItem ? activatedAbility(selectedItem) : undefined;
 
   function endTurn() {
     setSelHand(null);
     setSelField(null);
+    setSelItem(null);
     setAttacker(null);
     dispatch({ type: "END_TURN" });
     setCurtain(true);
@@ -293,16 +304,33 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
           if (promptTap(c.instanceId)) return;
           if (attacker) { setAttacker(null); return; }
           setSelHand(null);
+          setSelItem(null);
           setSelField((id) => (id === c.instanceId ? null : c.instanceId));
         }}
       />
-      <ItemRow items={meP.items} onItemTap={(c) => promptTap(c.instanceId)} />
+      <ItemRow
+        items={meP.items}
+        selectedId={selItem}
+        onItemTap={(c) => {
+          if (promptTap(c.instanceId)) return;
+          setSelField(null);
+          setSelItem((id) => (id === c.instanceId ? null : c.instanceId));
+        }}
+      />
       <InkPool player={meP} mine />
       {prompt && <PromptBar state={state} prompt={prompt} me={me} manualSel={manualSel} onClearManualSel={() => setManualSel(null)} />}
       {!prompt && selectedChar && !attacker && (
         <div className="flex gap-1">
           <button disabled={!canQuestSel} onClick={() => { dispatch({ type: "QUEST", cardInstanceId: selectedChar.instanceId }); setSelField(null); }} className="min-h-tap flex-1 rounded-lg bg-white/10 text-xs disabled:opacity-30">Quest (+{selectedChar.printed.lore ?? 0})</button>
           <button disabled={!canAttackSel} onClick={() => { setAttacker(selectedChar.instanceId); setSelField(null); }} className="min-h-tap flex-1 rounded-lg bg-amber-500/30 text-xs text-amber-100 disabled:opacity-30">Challenge</button>
+          {charAbility && (
+            <button onClick={() => { dispatch({ type: "ACTIVATE_ABILITY", cardInstanceId: selectedChar.instanceId, slug: charAbility.slug }); setSelField(null); }} className="min-h-tap flex-1 rounded-lg bg-ink-amethyst/40 text-xs text-violet-100" title={charAbility.effect}>⚡ {charAbility.name}</button>
+          )}
+        </div>
+      )}
+      {!prompt && selectedItem && itemAbility && (
+        <div className="flex gap-1">
+          <button onClick={() => { dispatch({ type: "ACTIVATE_ABILITY", cardInstanceId: selectedItem.instanceId, slug: itemAbility.slug }); setSelItem(null); }} className="min-h-tap flex-1 rounded-lg bg-ink-amethyst/40 text-xs text-violet-100" title={itemAbility.effect}>⚡ {itemAbility.name} — {itemAbility.effect}</button>
         </div>
       )}
 
@@ -433,7 +461,7 @@ function FieldRow({
 }
 
 /** Items / locations in play. Shown as a thin strip on the owner's board. */
-function ItemRow({ items, enemy, onItemTap }: { items: CardInstance[]; enemy?: boolean; onItemTap: (c: CardInstance) => void }) {
+function ItemRow({ items, enemy, selectedId, onItemTap }: { items: CardInstance[]; enemy?: boolean; selectedId?: string | null; onItemTap: (c: CardInstance) => void }) {
   if (items.length === 0) return null;
   return (
     <div className={cn("flex items-center gap-1 overflow-x-auto rounded-lg px-1 py-0.5", enemy ? "bg-rose-500/5" : "bg-amber-500/5")}>
@@ -442,7 +470,12 @@ function ItemRow({ items, enemy, onItemTap }: { items: CardInstance[]; enemy?: b
         <button
           key={c.instanceId}
           onClick={() => onItemTap(c)}
-          className={cn("relative w-12 shrink-0 rounded transition", c.exerted && "rotate-6 opacity-80")}
+          className={cn(
+            "relative w-12 shrink-0 rounded transition",
+            c.exerted && "rotate-6 opacity-80",
+            selectedId === c.instanceId && "ring-2 ring-ink-amethyst",
+            activatedAbility(c) && "ring-1 ring-violet-300/40",
+          )}
         >
           <CardThumb card={c.printed} />
           {c.damage > 0 && <span className="absolute right-0 top-0 rounded-bl bg-rose-600 px-1 text-[10px] font-bold text-white">{c.damage}</span>}

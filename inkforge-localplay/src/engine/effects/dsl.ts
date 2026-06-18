@@ -72,6 +72,8 @@ export interface EffectContext {
   controller: PlayerId;
   source: CardInstance;
   vars: Record<string, string>; // bound var name -> instanceId
+  /** Cards banished while these steps ran, so on_banish triggers can fire after. */
+  banished?: { card: CardInstance; owner: PlayerId }[];
 }
 
 /** A suspended sequence awaiting a target choice. Serialisable (frame-safe). */
@@ -98,7 +100,10 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       if (!t) return;
       t.damage += step.amount;
       const loc = findInstance(state, t.instanceId);
-      if (loc && t.damage >= effectiveWillpower(t)) banishCard(state.players[loc.owner], t, logs, state.turnNumber);
+      if (loc && t.damage >= effectiveWillpower(t)) {
+        banishCard(state.players[loc.owner], t, logs, state.turnNumber);
+        ctx.banished?.push({ card: t, owner: loc.owner });
+      }
       break;
     }
     case "removeDamage": {
@@ -109,7 +114,10 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     case "banish": {
       const t = resolveTarget(state, ctx, step.to);
       const loc = t && findInstance(state, t.instanceId);
-      if (t && loc) banishCard(state.players[loc.owner], t, logs, state.turnNumber);
+      if (t && loc) {
+        banishCard(state.players[loc.owner], t, logs, state.turnNumber);
+        ctx.banished?.push({ card: t, owner: loc.owner });
+      }
       break;
     }
     case "returnToHand": {

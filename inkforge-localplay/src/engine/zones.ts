@@ -17,10 +17,14 @@ export function drawCards(p: PlayerState, n: number): boolean {
   return true;
 }
 
-/** Banish a card from a player's field to discard (with any tucked cards). */
+/** Banish a card from a player's field/items to discard (with any tucked cards). */
 export function banishCard(p: PlayerState, card: CardInstance, logs: LogEntry[], turnNumber: number): void {
-  const i = p.field.indexOf(card);
-  if (i >= 0) p.field.splice(i, 1);
+  const fi = p.field.indexOf(card);
+  if (fi >= 0) p.field.splice(fi, 1);
+  else {
+    const ii = p.items.indexOf(card);
+    if (ii >= 0) p.items.splice(ii, 1);
+  }
   if (card.cardsUnder.length) {
     p.discard.push(...card.cardsUnder);
     card.cardsUnder = [];

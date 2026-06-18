@@ -545,5 +545,56 @@
       ]
     }
   ],
+  "jumbopop": [
+    {
+      "trigger": "on_play",
+      "steps": [
+        {
+          "do": "draw",
+          "player": "self",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "thatsredwood": [
+    {
+      "trigger": "activated",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": true,
+          "text": "remove up to 2 damage from chosen character"
+        },
+        {
+          "do": "removeDamage",
+          "to": "t",
+          "amount": 2
+        }
+      ]
+    }
+  ],
+  "extractofruby": [
+    {
+      "trigger": "activated",
+      "steps": [
+        {
+          "do": "chooseCharacter",
+          "as": "t",
+          "scope": "any",
+          "optional": false,
+          "text": "chosen character gains Rush and gets +2 ¤ this turn"
+        },
+        {
+          "do": "buff",
+          "to": "t",
+          "strength": 2,
+          "duration": "end_of_turn"
+        }
+      ]
+    }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

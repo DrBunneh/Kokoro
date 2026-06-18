@@ -85,6 +85,73 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].discard.some((c) => c.instanceId === playId)).toBe(true);
   });
 
+  it("fires on_banish when a card is banished mid-resolution", () => {
+    // The played card carries both an on_play zap and an on_banish draw, so
+    // targeting itself banishes it → its on_banish must then resolve.
+    const effects: CardEffects = {
+      zap: [{ trigger: "on_play", steps: [{ do: "chooseCharacter", as: "t", scope: "any" }, { do: "dealDamage", to: "t", amount: 2 }] }],
+      revenge: [{ trigger: "on_banish", steps: [{ do: "draw", player: "self", amount: 2 }] }],
+    };
+    const lookup: CardLookup = (id) =>
+      id.includes("-a")
+        ? printed(id, { specialAbilities: [
+            { name: "Zap", slug: "zap", effect: "When you play this, deal 2 damage to chosen character." },
+            { name: "Revenge", slug: "revenge", effect: "When this character is banished, draw 2 cards." },
+          ] })
+        : printed(id);
+    let g = toPlay(lookup);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    const playId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: playId }, effects).state;
+    const deckBefore = g.players[1].deck.length;
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: playId }, effects).state;
+    expect(g.pendingPrompts).toHaveLength(0);
+    expect(g.players[1].discard.some((c) => c.instanceId === playId)).toBe(true);
+    expect(g.players[1].deck.length).toBe(deckBefore - 2); // on_banish drew 2
+  });
+
+  it("activates an {E}-cost ability: exerts the source and resolves the effect", () => {
+    const effects: CardEffects = {
+      heal: [{ trigger: "activated", steps: [{ do: "chooseCharacter", as: "t", scope: "any" }, { do: "removeDamage", to: "t", amount: 2 }] }],
+    };
+    // An item with an {E} activated ability (items don't dry).
+    const lookup: CardLookup = (id) =>
+      id.includes("-a")
+        ? printed(id, { type: "item", inkable: true, specialAbilities: [{ name: "Heal", slug: "heal", effect: "{E} — Remove up to 2 damage from chosen character." }] })
+        : printed(id);
+    let g = toPlay(lookup);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    const itemId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: itemId }, effects).state;
+    expect(g.players[1].items.some((c) => c.instanceId === itemId)).toBe(true);
+    // Activating suspends on the target choice.
+    g = reduce(g, { type: "ACTIVATE_ABILITY", cardInstanceId: itemId }, effects).state;
+    const item = g.players[1].items.find((c) => c.instanceId === itemId)!;
+    expect(item.exerted).toBe(true); // {E} cost paid
+    expect(g.pendingPrompts).toHaveLength(1);
+    // Re-activating an exerted source is illegal.
+    expect(() => reduce(g, { type: "ACTIVATE_ABILITY", cardInstanceId: itemId }, effects)).toThrow();
+  });
+
+  it("a 'Banish this' activated cost banishes the source", () => {
+    const effects: CardEffects = {
+      pop: [{ trigger: "activated", steps: [{ do: "draw", player: "self", amount: 1 }] }],
+    };
+    const lookup: CardLookup = (id) =>
+      id.includes("-a")
+        ? printed(id, { type: "item", specialAbilities: [{ name: "Pop", slug: "pop", effect: "Banish this item — Draw a card." }] })
+        : printed(id);
+    let g = toPlay(lookup);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    const itemId = g.players[1].hand[0]!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: itemId }, effects).state;
+    const deckBefore = g.players[1].deck.length;
+    g = reduce(g, { type: "ACTIVATE_ABILITY", cardInstanceId: itemId }, effects).state;
+    expect(g.players[1].items.some((c) => c.instanceId === itemId)).toBe(false);
+    expect(g.players[1].discard.some((c) => c.instanceId === itemId)).toBe(true);
+    expect(g.players[1].deck.length).toBe(deckBefore - 1);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
