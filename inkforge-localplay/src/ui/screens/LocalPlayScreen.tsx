@@ -335,7 +335,7 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
     const ids: string[] = []; let value = 0;
     for (const c of me.field) {
       if (c.printed.type !== "character" || c.exerted) continue;
-      value += Math.max(c.printed.cost, keywordValue(c, "Singer"));
+      value += Math.max(c.printed.cost, keywordValue(s, c, "Singer"));
       ids.push(c.instanceId);
       if (value >= cost) return ids;
     }
@@ -376,7 +376,7 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
       {!prompt && selChar && myTurn && (
         <div className="flex gap-1">
           <button disabled={selChar.exerted || selChar.justPlayed} onClick={() => { act({ type: "QUEST", cardInstanceId: selChar.instanceId }); setSelField(null); }} className="min-h-tap flex-1 rounded bg-white/10 text-xs disabled:opacity-30">Quest</button>
-          <button disabled={selChar.exerted || (selChar.justPlayed && !hasKeyword(selChar, "Rush"))} onClick={() => { setAttacker(selChar.instanceId); setSelField(null); }} className="min-h-tap flex-1 rounded bg-amber-500/30 text-xs text-amber-100 disabled:opacity-30">Challenge</button>
+          <button disabled={selChar.exerted || (selChar.justPlayed && !hasKeyword(s, selChar, "Rush"))} onClick={() => { setAttacker(selChar.instanceId); setSelField(null); }} className="min-h-tap flex-1 rounded bg-amber-500/30 text-xs text-amber-100 disabled:opacity-30">Challenge</button>
           {charAbility && <button onClick={() => { act({ type: "ACTIVATE_ABILITY", cardInstanceId: selChar.instanceId, slug: charAbility.slug }); setSelField(null); }} className="min-h-tap flex-1 rounded bg-ink-amethyst/40 text-xs text-violet-100" title={charAbility.effect}>⚡ {charAbility.name}</button>}
         </div>
       )}
@@ -389,7 +389,7 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
 
       <div className="flex items-end gap-1 overflow-x-auto rounded bg-white/5 p-1">
         {me.hand.map((c) => {
-          const shiftCost = keywordValue(c, "Shift");
+          const shiftCost = keywordValue(s, c, "Shift");
           const shiftBase = shiftCost > 0 ? me.field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
           const singers = c.printed.type === "song" ? greedySingers(c.printed.cost) : [];
           return (

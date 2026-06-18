@@ -488,7 +488,7 @@ describe("Effect DSL + the bag", () => {
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
     g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
     g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "al" }, effects).state;
-    expect(keywordValue(g.players[1].field.find((c) => c.instanceId === "al")!, "Challenger")).toBe(3);
+    expect(keywordValue(g, g.players[1].field.find((c) => c.instanceId === "al")!, "Challenger")).toBe(3);
   });
 
   it("returnFromDiscard pulls a filtered card back to hand", () => {

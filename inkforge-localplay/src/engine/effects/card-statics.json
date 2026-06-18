@@ -1,0 +1,8 @@
+{
+  "thehighground": [{ "scope": "yours", "strength": 1 }],
+  "barricade": [{ "scope": "yours", "keyword": "Resist", "keywordValue": 1, "onlyOpponentTurn": true }],
+  "extremefocus": [{ "scope": "self", "strength": 1, "perDiscard": true }],
+  "frightfulscheme": [{ "scope": "yoursSubtype", "subtype": "Pirate", "keyword": "Resist", "keywordValue": 1, "whileExerted": true }],
+  "sinisterplot": [{ "scope": "self", "lore": 1 }],
+  "$schema": "slug -> StaticDef[] (continuous modifiers). slugs use build-card-db slugify."
+}

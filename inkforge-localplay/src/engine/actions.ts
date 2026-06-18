@@ -21,7 +21,9 @@ import {
 import { Rng } from "./rng";
 import { makeFrame, makeLog as log, type Frame, type LogEntry } from "./replay";
 import {
+  effectiveLore,
   effectiveStrength,
+  effectiveWillpower,
   hasKeyword,
   isBanished,
   keywordValue,
@@ -119,13 +121,6 @@ function clone(state: GameState): GameState {
   return structuredClone(state);
 }
 
-/** Effective value of a stat including temporary buffs/debuffs. */
-function effectiveLore(card: CardInstance): number {
-  const base = card.printed.lore ?? 0;
-  const delta = card.appliedEffects.reduce((n, e) => n + (e.lore ?? 0), 0);
-  return base + delta;
-}
-
 /** Ready (un-exerted) ink available to pay costs. */
 function readyInk(p: PlayerState): CardInstance[] {
   return p.inkwell.filter((c) => !c.exerted);
@@ -208,6 +203,11 @@ function actionEffectText(rules: string): string {
   t = t.replace(/^\((?:[^()]|\([^()]*\))*\)\s*/, ""); // leading parenthetical reminder
   t = t.replace(/^(Sing Together|Singer)\s+\d+\s*\((?:[^()]|\([^()]*\))*\)\s*/i, "");
   return t.trim();
+}
+
+/** Does a player control a character in play with the given (behavioural) static ability? */
+function hasControllerStatic(state: GameState, owner: PlayerId, slug: string): boolean {
+  return state.players[owner].field.some((c) => c.printed.type === "character" && c.printed.specialAbilities.some((a) => a.slug === slug));
 }
 
 /** Evaluate an effect's optional gate against the current state. */
@@ -371,10 +371,12 @@ function startTurn(state: GameState, player: PlayerId, logs: LogEntry[], isOpeni
   if (state.lockout && state.lockout.caster === player) delete state.lockout;
   const p = state.players[player];
 
-  // Ready step: ready all cards, clear drying.
+  // Ready step: ready all cards, clear drying. Demona "Stone by Day" can't ready
+  // while its controller holds 3+ cards.
   for (const c of [...p.field, ...p.items, ...p.inkwell]) {
-    c.exerted = false;
     c.justPlayed = false;
+    const stoneLocked = p.hand.length >= 3 && c.printed.specialAbilities.some((a) => a.slug === "stonebyday");
+    if (!stoneLocked) c.exerted = false;
   }
   logs.push(log({ turnNumber: state.turnNumber, player, type: "TURN_START", message: `${p.name}'s turn` }));
   logs.push(log({ turnNumber: state.turnNumber, player, type: "READY", message: "Ready step" }));
@@ -508,7 +510,7 @@ export function reduce(
 
       // --- Shift: play onto a same-name character for the Shift cost (§10.8) ---
       if (action.shiftOnto) {
-        const shiftCost = keywordValue(card, "Shift");
+        const shiftCost = keywordValue(next, card, "Shift");
         if (shiftCost <= 0) throw new GameError("Card has no Shift");
         const base = p.field.find((c) => c.instanceId === action.shiftOnto);
         if (!base || base.printed.type !== "character") throw new GameError("Shift target not in play");
@@ -539,7 +541,7 @@ export function reduce(
           const s = p.field.find((c) => c.instanceId === sid);
           if (!s || s.printed.type !== "character") throw new GameError("Singer not in play");
           if (s.exerted) throw new GameError("Singer is exerted");
-          singValue += Math.max(s.printed.cost, keywordValue(s, "Singer"));
+          singValue += Math.max(s.printed.cost, keywordValue(next, s, "Singer"));
           return s;
         });
         if (singValue < card.printed.cost) throw new GameError("Singers can't afford this song");
@@ -603,14 +605,14 @@ export function reduce(
       if (card.exerted) throw new GameError("Character is exerted");
       if (card.justPlayed) throw new GameError("Character is drying (played this turn)");
       card.exerted = true;
-      const gained = effectiveLore(card);
+      const gained = effectiveLore(next, card);
       p.lore += gained;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_QUEST", message: `${card.printed.fullName} quested for ${gained}`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "LORE_GAINED", message: `${p.name} now has ${p.lore} lore`, data: { lore: p.lore } }));
       fireTrigger(next, "on_quest", card, next.currentPlayer, logs, effects, true, banished);
       // Support (rules §10.13): add this character's {S} to another chosen one.
-      if (hasKeyword(card, "Support")) {
-        const amount = effectiveStrength(card);
+      if (hasKeyword(next, card, "Support")) {
+        const amount = effectiveStrength(next, card);
         const steps: Step[] = [
           { do: "chooseCharacter", as: "ally", scope: "ally", text: `add +${amount} ¤ to another character this turn` },
           { do: "buff", to: "ally", strength: amount, duration: "end_of_turn" },
@@ -679,19 +681,19 @@ export function reduce(
       const attacker = ap.field.find((c) => c.instanceId === action.attackerId);
       if (!attacker || attacker.printed.type !== "character") throw new GameError("Attacker is not a character in play");
       if (attacker.exerted) throw new GameError("Attacker is exerted");
-      if (attacker.justPlayed && !hasKeyword(attacker, "Rush")) throw new GameError("Attacker is drying");
+      if (attacker.justPlayed && !hasKeyword(next, attacker, "Rush")) throw new GameError("Attacker is drying");
 
       const defender = dp.field.find((c) => c.instanceId === action.defenderId);
       if (!defender) throw new GameError("Defender is not in play");
       const defenderIsChar = defender.printed.type === "character";
       if (defenderIsChar && !defender.exerted) throw new GameError("Can only challenge exerted characters");
-      if (defenderIsChar && hasKeyword(defender, "Evasive") && !hasKeyword(attacker, "Evasive")) {
+      if (defenderIsChar && hasKeyword(next, defender, "Evasive") && !hasKeyword(next, attacker, "Evasive")) {
         throw new GameError("Only Evasive characters can challenge an Evasive character");
       }
       // Bodyguard: if a legal enemy target has Bodyguard, one must be chosen.
       const legalTargets = dp.field.filter((c) => c.printed.type !== "character" || c.exerted);
-      const hasBodyguardTarget = legalTargets.some((c) => hasKeyword(c, "Bodyguard"));
-      if (hasBodyguardTarget && !hasKeyword(defender, "Bodyguard")) {
+      const hasBodyguardTarget = legalTargets.some((c) => hasKeyword(next, c, "Bodyguard"));
+      if (hasBodyguardTarget && !hasKeyword(next, defender, "Bodyguard")) {
         throw new GameError("Must challenge a character with Bodyguard");
       }
 
@@ -702,17 +704,20 @@ export function reduce(
       if (defenderIsChar) fireTrigger(next, "on_challenged", defender, otherPlayer(next.currentPlayer), logs, effects, true, banished);
 
       // Challenge damage (simultaneous), with Challenger +N and Resist applied.
-      const atkStrength = effectiveStrength(attacker) + keywordValue(attacker, "Challenger");
-      const defStrength = defenderIsChar ? effectiveStrength(defender) : 0;
-      const toDefender = Math.max(0, atkStrength - keywordValue(defender, "Resist"));
-      const toAttacker = Math.max(0, defStrength - keywordValue(attacker, "Resist"));
+      // Dale "Spike Suit": your characters deal challenge damage with willpower.
+      const atkBase = hasControllerStatic(next, next.currentPlayer, "spikesuit") ? effectiveWillpower(next, attacker) : effectiveStrength(next, attacker);
+      const defBase = !defenderIsChar ? 0 : hasControllerStatic(next, otherPlayer(next.currentPlayer), "spikesuit") ? effectiveWillpower(next, defender) : effectiveStrength(next, defender);
+      const atkStrength = atkBase + keywordValue(next, attacker, "Challenger");
+      const defStrength = defBase;
+      const toDefender = Math.max(0, atkStrength - keywordValue(next, defender, "Resist"));
+      const toAttacker = Math.max(0, defStrength - keywordValue(next, attacker, "Resist"));
       defender.damage += toDefender;
       attacker.damage += toAttacker;
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_ATTACK", message: `${attacker.printed.fullName} challenged ${defender.printed.fullName}`, cardRefs: [{ id: attacker.printed.id, name: attacker.printed.fullName }, { id: defender.printed.id, name: defender.printed.fullName }] }));
 
       // Banish anything that took lethal damage (simultaneous).
-      if (isBanished(defender)) { banishCard(dp, defender, logs, next.turnNumber); banished.push({ card: defender, owner: otherPlayer(next.currentPlayer) }); }
-      if (isBanished(attacker)) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); }
+      if (isBanished(next, defender)) { banishCard(dp, defender, logs, next.turnNumber); banished.push({ card: defender, owner: otherPlayer(next.currentPlayer) }); }
+      if (isBanished(next, attacker)) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); }
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
@@ -778,7 +783,7 @@ export function reduce(
               const loc = findInstance(next, action.targetInstanceId);
               if (lead.do === "chooseCharacter") {
                 // Reject an illegal target (wrong scope, or fails the filter).
-                if (!loc || loc.zone !== "field" || !targetMatches(loc.card, loc.owner, prompt.controller, lead, effectiveStrength(loc.card))) {
+                if (!loc || loc.zone !== "field" || !targetMatches(loc.card, loc.owner, prompt.controller, lead, effectiveStrength(next, loc.card))) {
                   throw new GameError("Not a legal target for this ability");
                 }
               } else {

@@ -219,7 +219,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
   }
   const selectedChar = meP.field.find((c) => c.instanceId === selField);
   const canQuestSel = !!selectedChar && selectedChar.printed.type === "character" && !selectedChar.exerted && !selectedChar.justPlayed && (selectedChar.printed.lore ?? 0) > 0;
-  const canAttackSel = !!selectedChar && selectedChar.printed.type === "character" && !selectedChar.exerted && (!selectedChar.justPlayed || hasKeyword(selectedChar, "Rush"));
+  const canAttackSel = !!selectedChar && selectedChar.printed.type === "character" && !selectedChar.exerted && (!selectedChar.justPlayed || hasKeyword(state, selectedChar, "Rush"));
   const charAbility = selectedChar ? activatedAbility(selectedChar) : undefined;
   const selectedItem = meP.items.find((c) => c.instanceId === selItem);
   const itemAbility = selectedItem ? activatedAbility(selectedItem) : undefined;
@@ -315,6 +315,7 @@ function PlayPhase({ state, onLeave }: { state: GameState; onLeave: () => void }
       )}
 
       <HandRow
+        state={state}
         cards={meP.hand}
         field={meP.field}
         selectedId={selHand}
@@ -496,12 +497,12 @@ function FieldRow({
 }
 
 /** Greedily pick ready singers whose combined value covers a song's cost. */
-function pickSingers(field: CardInstance[], cost: number): string[] {
+function pickSingers(state: GameState, field: CardInstance[], cost: number): string[] {
   const ids: string[] = [];
   let value = 0;
   for (const c of field) {
     if (c.printed.type !== "character" || c.exerted) continue;
-    value += Math.max(c.printed.cost, keywordValue(c, "Singer"));
+    value += Math.max(c.printed.cost, keywordValue(state, c, "Singer"));
     ids.push(c.instanceId);
     if (value >= cost) return ids;
   }
@@ -509,8 +510,9 @@ function pickSingers(field: CardInstance[], cost: number): string[] {
 }
 
 function HandRow({
-  cards, field, selectedId, canInk, ink, onCardTap, onInk, onPlay, onShift, onSing,
+  state, cards, field, selectedId, canInk, ink, onCardTap, onInk, onPlay, onShift, onSing,
 }: {
+  state: GameState;
   cards: CardInstance[];
   field: CardInstance[];
   selectedId: string | null;
@@ -526,9 +528,9 @@ function HandRow({
     <div className="flex items-end gap-1 overflow-x-auto rounded-lg bg-white/5 p-1">
       {cards.map((c) => {
         const selected = selectedId === c.instanceId;
-        const shiftCost = keywordValue(c, "Shift");
+        const shiftCost = keywordValue(state, c, "Shift");
         const shiftBase = shiftCost > 0 ? field.find((f) => f.printed.type === "character" && f.printed.name === c.printed.name) : undefined;
-        const singers = c.printed.type === "song" ? pickSingers(field, c.printed.cost) : [];
+        const singers = c.printed.type === "song" ? pickSingers(state, field, c.printed.cost) : [];
         return (
           <div key={c.instanceId} className="shrink-0">
             <button onClick={() => onCardTap(c)} className={cn("block w-16 rounded", selected && "ring-2 ring-ink-sapphire")}>

@@ -273,7 +273,7 @@ function dynAmount(state: GameState, ctx: EffectContext, base: number | undefine
 function hit(state: GameState, ctx: EffectContext, t: CardInstance, amount: number, logs: LogEntry[]): void {
   t.damage += amount;
   const loc = findInstance(state, t.instanceId);
-  if (loc && t.damage >= effectiveWillpower(t)) {
+  if (loc && t.damage >= effectiveWillpower(state, t)) {
     banishCard(state.players[loc.owner], t, logs, state.turnNumber);
     ctx.banished?.push({ card: t, owner: loc.owner });
   }
@@ -307,7 +307,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       break;
     }
     case "gainLoreByStrength": {
-      const amt = Math.min(effectiveStrength(ctx.source), step.max ?? Infinity);
+      const amt = Math.min(effectiveStrength(state, ctx.source), step.max ?? Infinity);
       if (amt > 0) state.players[ctx.controller].lore += amt;
       break;
     }
@@ -381,7 +381,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         from.damage -= moved;
         to.damage += moved;
         const loc = findInstance(state, to.instanceId);
-        if (loc && to.damage >= effectiveWillpower(to)) {
+        if (loc && to.damage >= effectiveWillpower(state, to)) {
           banishCard(state.players[loc.owner], to, logs, state.turnNumber);
           ctx.banished?.push({ card: to, owner: loc.owner });
         }
@@ -441,7 +441,7 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     }
     case "toBottomAll": {
       for (const t of charsInScope(state, ctx.controller, step.scope ?? "any")) {
-        if (step.maxStrength != null && effectiveStrength(t) > step.maxStrength) continue;
+        if (step.maxStrength != null && effectiveStrength(state, t) > step.maxStrength) continue;
         const loc = findInstance(state, t.instanceId);
         if (!loc) continue;
         const arr = state.players[loc.owner][loc.zone];
