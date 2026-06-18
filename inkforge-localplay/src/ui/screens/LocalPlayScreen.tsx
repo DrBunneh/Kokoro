@@ -8,8 +8,10 @@ import {
   WsClientTransport,
   LocalNet,
   localPlaySupported,
+  subscribeNativeLog,
   type DiscoveredPeer,
 } from "@/net/localnet";
+import { netLog, nlog, formatNetLog, type NetLogEntry } from "@/net/netlog";
 import { NetGame } from "@/net/netgame";
 import { createGame } from "@/engine/actions";
 import { hasKeyword, keywordValue } from "@/engine/keywords";
@@ -46,7 +48,11 @@ export function LocalPlayScreen() {
 
   useEffect(() => { if (!loaded) void load(); }, [loaded, load]);
   useEffect(() => { if (decks.length && !deckId) setDeckId((decks.find((d) => d.isDefault) ?? decks[0]!).id); }, [decks, deckId]);
-  useEffect(() => () => cleanup(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let unsub = () => {};
+    void subscribeNativeLog().then((fn) => { unsub = fn; });
+    return () => { unsub(); cleanup(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const myDeck = (): Deck | undefined => decks.find((d) => d.id === deckId);
   const rerender = () => setTick((t) => t + 1);
@@ -63,29 +69,33 @@ export function LocalPlayScreen() {
   /** Host: build the shared base on HELLO, start the NetGame, send INIT. */
   function wireHost(t: HostTransport) {
     t.onReceive((msg) => {
-      if (msg.t === "HELLO" && index && !gameRef.current) {
-        const mine = myDeck();
-        if (!mine) return;
-        const base = createGame({
-          id: crypto.randomUUID(),
-          seed: `${Date.now()}-${Math.random()}`,
-          lookup: (id) => index.get(id),
-          players: {
-            1: { name: mine.name, deck: flatten(mine) },
-            2: { name: msg.name, deck: msg.deck },
-          },
-        });
-        gameRef.current = new NetGame(t, "host", base, rerender);
-        t.send({ t: "INIT", baseSnapshot: base });
-        setPhase("connected");
-        rerender();
-      }
+      if (msg.t !== "HELLO") return;
+      if (gameRef.current) { nlog("host", "ignoring duplicate HELLO (game already started)", "warn"); return; }
+      if (!index) { nlog("host", "received HELLO but card DB not ready yet", "error"); return; }
+      const mine = myDeck();
+      if (!mine) { nlog("host", "received HELLO but no host deck selected", "error"); return; }
+      nlog("host", `received HELLO from "${msg.name}" (${msg.deck.length}-card deck) — building game, sending INIT`);
+      const base = createGame({
+        id: crypto.randomUUID(),
+        seed: `${Date.now()}-${Math.random()}`,
+        lookup: (id) => index.get(id),
+        players: {
+          1: { name: mine.name, deck: flatten(mine) },
+          2: { name: msg.name, deck: msg.deck },
+        },
+      });
+      gameRef.current = new NetGame(t, "host", base, rerender);
+      t.send({ t: "INIT", baseSnapshot: base });
+      nlog("host", "game started — both players connected");
+      setPhase("connected");
+      rerender();
     });
   }
 
   function wireFollower(t: WsClientTransport) {
     t.onReceive((msg) => {
       if (msg.t === "INIT" && !gameRef.current) {
+        nlog("follower", "received INIT — game starting");
         gameRef.current = new NetGame(t, "follower", msg.baseSnapshot, rerender);
         setPhase("connected");
         rerender();
@@ -93,7 +103,8 @@ export function LocalPlayScreen() {
     });
     t.onOpen(() => {
       const mine = myDeck();
-      if (mine) t.send({ t: "HELLO", name: mine.name, deck: flatten(mine) });
+      if (mine) { nlog("follower", `socket open — sending HELLO ("${mine.name}", ${flatten(mine).length} cards)`); t.send({ t: "HELLO", name: mine.name, deck: flatten(mine) }); }
+      else nlog("follower", "socket open but no deck selected — cannot send HELLO", "error");
       setStatus("Connected — syncing…");
     });
   }
@@ -136,6 +147,7 @@ export function LocalPlayScreen() {
   function connectTo(peer: DiscoveredPeer) {
     setPhase("connecting");
     setStatus(`Connecting to ${peer.name} (${peer.host}:${peer.port})…`);
+    nlog("follower", `connecting to "${peer.name}" at ${peer.host}:${peer.port}`);
     void LocalNet.stopDiscovery().catch(() => {});
     const t = new WsClientTransport(peer);
     transportRef.current = t;
@@ -143,6 +155,7 @@ export function LocalPlayScreen() {
     // Don't hang forever if the host is unreachable.
     setTimeout(() => {
       if (!gameRef.current) {
+        nlog("follower", `timed out after 10s connecting to ${peer.host}:${peer.port} (socket state: ${t.status})`, "error");
         t.close();
         transportRef.current = null;
         setStatus(`Couldn't reach ${peer.host}:${peer.port}. Try “Connect by IP” with the address shown on the host.`);
@@ -243,6 +256,8 @@ export function LocalPlayScreen() {
       )}
 
       {phase === "error" && <p className="text-sm text-rose-300">{status}</p>}
+
+      <ConnLog startOpen={phase !== "menu"} />
 
       {phase !== "menu" && phase !== "connected" && (
         <button onClick={() => { cleanup(); setPhase("menu"); setStatus(""); }} className="text-xs text-slate-500 underline">Cancel</button>
@@ -398,6 +413,7 @@ function NetBoard({ game, viewer, onLeave }: { game: NetGame; viewer: PlayerId; 
           );
         })}
       </div>
+      <ConnLog />
       <div className="flex gap-1">
         <button disabled={!myTurn || !!prompt} onClick={() => act({ type: "END_TURN" })} className="min-h-tap flex-[2] rounded bg-ink-sapphire text-xs font-semibold text-white disabled:opacity-40">End turn</button>
         <button onClick={() => act({ type: "GAME_FINISH", winner: opp, reason: "concession" })} className="min-h-tap flex-1 rounded bg-rose-500/20 text-xs text-rose-200">Concede</button>
@@ -477,6 +493,46 @@ function NetPrompt({ state, prompt, mine, manualSel, dispatch, onClearManualSel 
           )}
           <p className="text-[10px] text-amber-200">Tap a card to adjust it.</p>
           <button onClick={() => { dispatch({ type: "RESPOND_TO_PROMPT", promptId: prompt.id }); onClearManualSel(); }} className="w-full rounded bg-ink-sapphire px-2 py-1 font-semibold text-white">Done</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Live connection diagnostics, readable on each device and copyable to report. */
+function ConnLog({ startOpen = false }: { startOpen?: boolean }) {
+  const [open, setOpen] = useState(startOpen);
+  const [entries, setEntries] = useState<readonly NetLogEntry[]>(netLog.list());
+  const [copied, setCopied] = useState(false);
+  useEffect(() => netLog.subscribe(() => setEntries([...netLog.list()])), []);
+
+  const fmtTime = (ts: number) => {
+    const d = new Date(ts);
+    return `${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+  };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(formatNetLog()); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/30">
+      <div className="flex items-center justify-between px-2 py-1">
+        <button onClick={() => setOpen((o) => !o)} className="text-xs font-semibold text-slate-300">
+          {open ? "▾" : "▸"} Connection log ({entries.length})
+        </button>
+        <div className="flex gap-2">
+          <button onClick={copy} className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-slate-200">{copied ? "Copied!" : "Copy"}</button>
+          <button onClick={() => netLog.clear()} className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-slate-200">Clear</button>
+        </div>
+      </div>
+      {open && (
+        <div className="max-h-48 overflow-y-auto px-2 pb-2 font-mono text-[10px] leading-snug">
+          {entries.length === 0 && <p className="text-slate-500">No events yet. Tap Host or Join.</p>}
+          {entries.map((e) => (
+            <div key={e.id} className={cn("whitespace-pre-wrap", e.level === "error" ? "text-rose-300" : e.level === "warn" ? "text-amber-300" : "text-slate-300")}>
+              <span className="text-slate-500">{fmtTime(e.ts)}</span> <span className="text-slate-500">[{e.side}]</span> {e.msg}
+            </div>
+          ))}
         </div>
       )}
     </div>

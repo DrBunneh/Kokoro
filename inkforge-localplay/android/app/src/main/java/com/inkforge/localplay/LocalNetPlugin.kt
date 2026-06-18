@@ -45,6 +45,22 @@ class LocalNetPlugin : Plugin() {
         activity?.runOnUiThread { notifyListeners(event, data) }
     }
 
+    /** Surface a native-side diagnostic to JS (shown in the in-app connection log). */
+    private fun log(msg: String, level: String = "info") {
+        val o = JSObject()
+        o.put("level", level)
+        o.put("msg", msg)
+        emit("log", o)
+    }
+
+    /** Human-readable NSD error code (Android constants are bare ints otherwise). */
+    private fun nsdErr(code: Int): String = when (code) {
+        NsdManager.FAILURE_ALREADY_ACTIVE -> "ALREADY_ACTIVE"
+        NsdManager.FAILURE_INTERNAL_ERROR -> "INTERNAL_ERROR"
+        NsdManager.FAILURE_MAX_LIMIT -> "MAX_LIMIT"
+        else -> "code $code"
+    }
+
     private fun nsd(): NsdManager =
         (context.getSystemService(Context.NSD_SERVICE) as NsdManager).also { nsdManager = it }
 
@@ -104,8 +120,8 @@ class LocalNetPlugin : Plugin() {
             setPort(port)
         }
         val listener = object : NsdManager.RegistrationListener {
-            override fun onServiceRegistered(arg0: NsdServiceInfo) {}
-            override fun onRegistrationFailed(arg0: NsdServiceInfo, errorCode: Int) {}
+            override fun onServiceRegistered(arg0: NsdServiceInfo) { log("NSD advertised as \"${arg0.serviceName}\" on port $port") }
+            override fun onRegistrationFailed(arg0: NsdServiceInfo, errorCode: Int) { log("NSD registration FAILED (${nsdErr(errorCode)}) — followers won't discover this host; use Connect by IP", "error") }
             override fun onServiceUnregistered(arg0: NsdServiceInfo) {}
             override fun onUnregistrationFailed(arg0: NsdServiceInfo, errorCode: Int) {}
         }
@@ -139,12 +155,13 @@ class LocalNetPlugin : Plugin() {
         } catch (_: Exception) {}
 
         val listener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(serviceType: String) {}
+            override fun onDiscoveryStarted(serviceType: String) { log("discovery started for $serviceType") }
             override fun onDiscoveryStopped(serviceType: String) {}
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { log("discovery FAILED to start (${nsdErr(errorCode)})", "error") }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
-            override fun onServiceFound(service: NsdServiceInfo) { queueResolve(service) }
+            override fun onServiceFound(service: NsdServiceInfo) { log("found service \"${service.serviceName}\", resolving…"); queueResolve(service) }
             override fun onServiceLost(service: NsdServiceInfo) {
+                log("service lost: \"${service.serviceName}\"", "warn")
                 val o = JSObject(); o.put("name", service.serviceName); emit("peerLost", o)
             }
         }
@@ -174,13 +191,16 @@ class LocalNetPlugin : Plugin() {
         val manager = nsdManager ?: return
         val resolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                log("resolve FAILED for \"${serviceInfo.serviceName}\" (${nsdErr(errorCode)})", "warn")
                 synchronized(resolveQueue) { resolving = false }
                 resolveNext()
             }
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                val host = pickHost(serviceInfo)
+                log("resolved \"${serviceInfo.serviceName}\" -> $host:${serviceInfo.port}")
                 val o = JSObject()
                 o.put("name", serviceInfo.serviceName)
-                o.put("host", pickHost(serviceInfo))
+                o.put("host", host)
                 o.put("port", serviceInfo.port)
                 emit("peerFound", o)
                 synchronized(resolveQueue) { resolving = false }
@@ -214,10 +234,12 @@ class LocalNetPlugin : Plugin() {
             return object : WebSocket(handshake) {
                 override fun onOpen() {
                     socket = this
+                    log("WebSocket server accepted a follower connection")
                     emit("peerConnected")
                 }
                 override fun onClose(code: WebSocketFrame.CloseCode?, reason: String?, initiatedByRemote: Boolean) {
                     socket = null
+                    log("WebSocket server connection closed (${code?.name ?: "?"}${if (reason.isNullOrEmpty()) "" else ", \"$reason\""}, ${if (initiatedByRemote) "by remote" else "by host"})", "warn")
                     emit("peerDisconnected")
                 }
                 override fun onMessage(message: WebSocketFrame) {
@@ -226,7 +248,7 @@ class LocalNetPlugin : Plugin() {
                     emit("message", o)
                 }
                 override fun onPong(pong: WebSocketFrame) {}
-                override fun onException(exception: IOException) {}
+                override fun onException(exception: IOException) { log("WebSocket server exception: ${exception.message}", "error") }
             }
         }
 

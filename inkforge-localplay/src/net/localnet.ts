@@ -15,6 +15,7 @@
  */
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import type { NetMsg, Transport } from "./transport";
+import { nlog } from "./netlog";
 
 export interface DiscoveredPeer {
   name: string;
@@ -36,12 +37,30 @@ export interface LocalNetPlugin {
   addListener(event: "peerDisconnected", cb: () => void): Promise<PluginListenerHandle>;
   addListener(event: "peerFound", cb: (p: DiscoveredPeer) => void): Promise<PluginListenerHandle>;
   addListener(event: "peerLost", cb: (p: { name: string }) => void): Promise<PluginListenerHandle>;
+  /** Native-side diagnostics (NSD register/discovery, WS server). Newer APKs only. */
+  addListener(event: "log", cb: (d: { level?: string; msg: string }) => void): Promise<PluginListenerHandle>;
 }
 
 export const LocalNet = registerPlugin<LocalNetPlugin>("LocalNet");
 
 export function localPlaySupported(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+/**
+ * Bridge native diagnostics into the shared net log. No-op on web / older APKs
+ * that don't emit `log` events. Returns an unsubscribe fn.
+ */
+export async function subscribeNativeLog(): Promise<() => void> {
+  if (!Capacitor.isNativePlatform()) return () => {};
+  try {
+    const h = await LocalNet.addListener("log", ({ level, msg }) => {
+      nlog("native", msg, level === "error" ? "error" : level === "warn" ? "warn" : "info");
+    });
+    return () => void h.remove();
+  } catch {
+    return () => {};
+  }
 }
 
 /** Host side: bridges the native WebSocket server through the LocalNet plugin. */
@@ -53,24 +72,35 @@ export class HostTransport implements Transport {
   private handles: PluginListenerHandle[] = [];
 
   async start(name: string): Promise<{ port: number; addresses?: string[] }> {
+    nlog("host", `starting host as "${name}"…`);
     this.handles.push(
       await LocalNet.addListener("message", ({ data }) => {
         try {
           const m = JSON.parse(data) as NetMsg;
+          nlog("host", `recv ${m.t} (${data.length} bytes)`);
           this.cbs.forEach((cb) => cb(m));
         } catch {
-          /* ignore malformed */
+          nlog("host", `recv malformed message (${data.length} bytes)`, "warn");
         }
       }),
       await LocalNet.addListener("peerConnected", () => {
+        nlog("host", "follower WebSocket connected");
         this.status = "connected";
         this.openCbs.forEach((cb) => cb());
       }),
       await LocalNet.addListener("peerDisconnected", () => {
+        nlog("host", "follower WebSocket disconnected", "warn");
         this.status = "closed";
       }),
     );
-    return LocalNet.startHost({ name });
+    try {
+      const info = await LocalNet.startHost({ name });
+      nlog("host", `server listening on port ${info.port}; addresses: ${(info.addresses ?? []).join(", ") || "(none found)"}`);
+      return info;
+    } catch (e) {
+      nlog("host", `startHost failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+      throw e;
+    }
   }
 
   onOpen(cb: () => void): () => void {
@@ -79,6 +109,7 @@ export class HostTransport implements Transport {
     return () => this.openCbs.delete(cb);
   }
   send(msg: NetMsg): void {
+    nlog("host", `send ${msg.t}`);
     void LocalNet.send({ data: JSON.stringify(msg) });
   }
   onReceive(cb: (m: NetMsg) => void): () => void {
@@ -101,23 +132,40 @@ export class WsClientTransport implements Transport {
   private cbs = new Set<(m: NetMsg) => void>();
   private openCbs = new Set<() => void>();
 
+  readonly url: string;
+
   constructor(peer: DiscoveredPeer) {
     // Bracket IPv6 (strip any %scope, which ws:// can't use) so the URL is valid.
     const h = peer.host.includes(":") ? `[${peer.host.replace(/%.*$/, "")}]` : peer.host;
-    this.ws = new WebSocket(`ws://${h}:${peer.port}`);
+    this.url = `ws://${h}:${peer.port}`;
+    nlog("follower", `opening WebSocket to ${this.url}…`);
+    this.ws = new WebSocket(this.url);
     this.ws.onopen = () => {
+      nlog("follower", `WebSocket open to ${this.url}`);
       this.status = "connected";
       this.openCbs.forEach((cb) => cb());
     };
-    this.ws.onclose = () => {
+    this.ws.onclose = (e) => {
+      // The close code/reason is the key clue for "stuck at connecting".
+      const before = this.status;
+      nlog(
+        "follower",
+        `WebSocket closed (code ${e.code}${e.reason ? `, "${e.reason}"` : ""}, ${e.wasClean ? "clean" : "unclean"})${before === "connecting" ? " — never opened, host unreachable or refused" : ""}`,
+        before === "connected" ? "warn" : "error",
+      );
       this.status = "closed";
     };
+    this.ws.onerror = () => {
+      nlog("follower", `WebSocket error connecting to ${this.url} (check IP/port, same network, firewall)`, "error");
+    };
     this.ws.onmessage = (e) => {
+      const data = e.data as string;
       try {
-        const m = JSON.parse(e.data as string) as NetMsg;
+        const m = JSON.parse(data) as NetMsg;
+        nlog("follower", `recv ${m.t} (${data.length} bytes)`);
         this.cbs.forEach((cb) => cb(m));
       } catch {
-        /* ignore */
+        nlog("follower", `recv malformed message (${data.length} bytes)`, "warn");
       }
     };
   }
@@ -128,7 +176,12 @@ export class WsClientTransport implements Transport {
     return () => this.openCbs.delete(cb);
   }
   send(msg: NetMsg): void {
-    if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    if (this.ws.readyState === WebSocket.OPEN) {
+      nlog("follower", `send ${msg.t}`);
+      this.ws.send(JSON.stringify(msg));
+    } else {
+      nlog("follower", `cannot send ${msg.t} — socket not open (state ${this.ws.readyState})`, "warn");
+    }
   }
   onReceive(cb: (m: NetMsg) => void): () => void {
     this.cbs.add(cb);
