@@ -22,6 +22,8 @@ export type Trigger =
   | "on_play_action" // whenever you play an action/song (for your other cards)
   | "on_play_song" // whenever you play a song specifically
   | "on_play_character" // whenever you play a character (for your other cards)
+  | "on_play_cheap" // whenever you pay 2 {I} or less to play a card (for your other cards)
+  | "on_challenge_banish" // when this character banishes another in a challenge
   | "on_item_banished" // whenever an item is banished, during your turn
   | "start_of_turn"
   | "end_of_turn"
@@ -49,6 +51,13 @@ export interface Condition {
   haveCharacterNamed?: string;
   /** It's your first turn and you're not the first player. */
   firstTurnNotFirstPlayer?: boolean;
+  /** The most-recently-played card this turn is of this type (for on_play_cheap). */
+  lastPlayedType?: CardType;
+  /** The most-recently-played card this turn is NOT a character (for on_play_cheap). */
+  lastPlayedNonCharacter?: boolean;
+  /** You have at least N *other* characters in play (optionally of `otherSubtype`). */
+  otherCharsAtLeast?: number;
+  otherSubtype?: string;
 }
 
 /** A magnitude that scales with the number of characters in a scope. */
@@ -65,6 +74,8 @@ export interface TargetFilter {
   subtype?: string;
   /** Target must be exerted (Pocahontas — "another chosen exerted character"). */
   exerted?: boolean;
+  /** Target must have damage on it (Buzz — "chosen opposing damaged character"). */
+  damaged?: boolean;
 }
 
 /** Restricts which revealed deck cards a scry may keep (e.g. "a song card"). */
@@ -250,6 +261,7 @@ export function targetMatches(
     if (f.maxCost != null && card.printed.cost > f.maxCost) return false;
     if (f.subtype && !card.printed.subtypes.some((s) => s.toLowerCase() === f.subtype!.toLowerCase())) return false;
     if (f.exerted && !card.exerted) return false;
+    if (f.damaged && card.damage <= 0) return false;
   }
   return true;
 }

@@ -1206,5 +1206,76 @@
   "maliciousmeanandscary": [
     { "trigger": "on_play", "steps": [{ "do": "dealDamageAll", "scope": "enemy", "amount": 1 }] }
   ],
+
+  "yodelayheehoo": [
+    { "trigger": "on_play_cheap", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "-1 {S} until your next turn" },
+      { "do": "debuff", "to": "t", "strength": 1, "duration": "untilNextTurn" }
+    ] }
+  ],
+  "partofafamily": [
+    { "trigger": "on_quest", "when": { "otherCharsAtLeast": 2, "otherSubtype": "Toy" }, "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "worldsgreatesttoy": [
+    { "trigger": "on_play_cheap", "when": { "lastPlayedType": "character" }, "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "filter": { "damaged": true }, "text": "deal 1 damage to a damaged opposing character" },
+      { "do": "dealDamage", "to": "t", "amount": 1 }
+    ] }
+  ],
+  "secretmission": [
+    { "trigger": "on_play_cheap", "when": { "lastPlayedNonCharacter": true }, "steps": [
+      { "do": "draw", "player": "self", "amount": 1 },
+      { "do": "discardChoose", "amount": 1, "text": "choose a card to discard" }
+    ] }
+  ],
+  "tightenthebolts": [
+    { "trigger": "on_play_cheap", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "give +2 {S} this turn" },
+      { "do": "buff", "to": "t", "strength": 2, "duration": "end_of_turn" }
+    ] }
+  ],
+  "levelup": [
+    { "trigger": "on_challenge_banish", "steps": [{ "do": "gainLore", "player": "self", "amount": 2 }] }
+  ],
+  "skilledcombatant": [
+    { "trigger": "on_challenge_banish", "steps": [{ "do": "gainLore", "player": "self", "amount": 2 }] }
+  ],
+  "thegoodofothers": [
+    { "trigger": "on_banish", "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "punypirate": [
+    { "trigger": "on_challenge_banish", "steps": [
+      { "do": "mayConfirm", "text": "deal 2 damage to a chosen opposing character?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "deal 2 damage" },
+      { "do": "dealDamage", "to": "t", "amount": 2 }
+    ] }
+  ],
+  "hereicome": [
+    { "trigger": "on_play", "steps": [{ "do": "gainLore", "player": "self", "amount": 1 }] },
+    { "trigger": "on_banish", "steps": [{ "do": "gainLore", "player": "self", "amount": 1 }] }
+  ],
+  "hoppityhip": [
+    { "trigger": "on_play", "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] },
+    { "trigger": "on_banish", "steps": [
+      { "do": "mayConfirm", "text": "draw a card?" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "secondchance": [
+    { "trigger": "on_banish", "steps": [
+      { "do": "mayConfirm", "text": "return a character of yours to your hand?" },
+      { "do": "chooseCharacter", "as": "t", "scope": "ally", "optional": true, "text": "return to hand" },
+      { "do": "returnToHand", "to": "t" }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

@@ -230,6 +230,15 @@ function conditionMet(state: GameState, controller: PlayerId, source: CardInstan
     if (!p.field.some((c) => c.printed.name.toLowerCase() === want)) return false;
   }
   if (when.firstTurnNotFirstPlayer && !(controller !== state.firstPlayer && state.turnNumber <= 2)) return false;
+  const last = played[played.length - 1];
+  if (when.lastPlayedType && last?.type !== when.lastPlayedType) return false;
+  if (when.lastPlayedNonCharacter && (!last || last.type === "character")) return false;
+  if (when.otherCharsAtLeast != null) {
+    const want = when.otherSubtype?.toLowerCase();
+    const n = p.field.filter((c) => c.printed.type === "character" && c.instanceId !== source.instanceId &&
+      (!want || c.printed.subtypes.some((s) => s.toLowerCase() === want))).length;
+    if (n < when.otherCharsAtLeast) return false;
+  }
   return true;
 }
 
@@ -576,6 +585,8 @@ export function reduce(
         fireTrigger(next, "on_play", card, next.currentPlayer, logs, effects, true, banished);
         fireForController(next, "on_play_action", next.currentPlayer, logs, effects, banished);
         fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
+        // A sung song pays no ink (≤ 2) → "whenever you pay 2 {I} or less to play a card".
+        fireForController(next, "on_play_cheap", next.currentPlayer, logs, effects, banished);
         drainBanish(next, banished, logs, effects);
         return { state: next, logs };
       }
@@ -615,6 +626,9 @@ export function reduce(
       if (card.printed.type === "action" || card.printed.type === "song") fireForController(next, "on_play_action", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "song") fireForController(next, "on_play_song", next.currentPlayer, logs, effects, banished);
       if (card.printed.type === "character") fireForController(next, "on_play_character", next.currentPlayer, logs, effects, banished, card.instanceId);
+      // "Whenever you pay 2 {I} or less to play a card" (Jessie, Buzz, Babyhead) —
+      // the card being played doesn't see its own entry.
+      if (cost <= 2) fireForController(next, "on_play_cheap", next.currentPlayer, logs, effects, banished, card.instanceId);
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
@@ -745,8 +759,13 @@ export function reduce(
       logs.push(log({ turnNumber: next.turnNumber, player: next.currentPlayer, type: "CARD_ATTACK", message: `${attacker.printed.fullName} challenged ${defender.printed.fullName}`, cardRefs: [{ id: attacker.printed.id, name: attacker.printed.fullName }, { id: defender.printed.id, name: defender.printed.fullName }] }));
 
       // Banish anything that took lethal damage (simultaneous).
-      if (isBanished(next, defender)) { banishCard(dp, defender, logs, next.turnNumber); banished.push({ card: defender, owner: otherPlayer(next.currentPlayer) }); }
-      if (isBanished(next, attacker)) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); }
+      const defenderDies = defenderIsChar && isBanished(next, defender);
+      const attackerDies = isBanished(next, attacker);
+      if (defenderDies) { banishCard(dp, defender, logs, next.turnNumber); banished.push({ card: defender, owner: otherPlayer(next.currentPlayer) }); }
+      if (attackerDies) { banishCard(ap, attacker, logs, next.turnNumber); banished.push({ card: attacker, owner: next.currentPlayer }); }
+      // "Whenever this character banishes another character in a challenge" — only
+      // if the attacker survived to do the banishing (Calhoun, Robin, Tinker Bell).
+      if (defenderDies && !attackerDies) fireTrigger(next, "on_challenge_banish", attacker, next.currentPlayer, logs, effects, true, banished);
       drainBanish(next, banished, logs, effects);
       return { state: next, logs };
     }
