@@ -2,9 +2,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDecks } from "@/state/useDecks";
 import { useCardDb } from "@/ui/hooks/useCardDb";
-import { QrCode } from "@/ui/components/QrCode";
 import { CardThumb } from "@/ui/components/CardThumb";
-import { WebRtcTransport } from "@/net/webrtc";
+import {
+  HostTransport,
+  WsClientTransport,
+  LocalNet,
+  localPlaySupported,
+  type DiscoveredPeer,
+} from "@/net/localnet";
 import { NetGame } from "@/net/netgame";
 import { createGame } from "@/engine/actions";
 import { hasKeyword } from "@/engine/keywords";
@@ -12,12 +17,15 @@ import { cn } from "@/lib/cn";
 import type { Deck } from "@/data/deck-types";
 import type { PrintedCard } from "@/data/card-types";
 import type { PlayerId } from "@/engine/state";
+import type { PluginListenerHandle } from "@capacitor/core";
 
-type Phase = "menu" | "host" | "join" | "connected" | "error";
+type Phase = "menu" | "hosting" | "joining" | "connecting" | "connected" | "error";
+
+const flatten = (d: Deck): string[] => d.cards.flatMap((c) => Array<string>(c.count).fill(c.id));
 
 /**
- * Local PvP pairing wizard (spec §8). WebRTC with manual QR/paste signalling.
- * NOTE: requires two devices on a local link; unverifiable in the sandbox.
+ * Local PvP over the shared network (spec §8, revised): host advertises, join
+ * discovers and connects — no codes. Requires the native build (LocalNet).
  */
 export function LocalPlayScreen() {
   const navigate = useNavigate();
@@ -25,26 +33,34 @@ export function LocalPlayScreen() {
   const { decks, loaded, load } = useDecks();
   const [phase, setPhase] = useState<Phase>("menu");
   const [deckId, setDeckId] = useState("");
-  const [myCode, setMyCode] = useState("");
-  const [peerCode, setPeerCode] = useState("");
   const [status, setStatus] = useState("");
+  const [peers, setPeers] = useState<DiscoveredPeer[]>([]);
   const [, setTick] = useState(0);
 
-  const transportRef = useRef<WebRtcTransport | null>(null);
+  const transportRef = useRef<HostTransport | WsClientTransport | null>(null);
   const gameRef = useRef<NetGame | null>(null);
+  const discHandles = useRef<PluginListenerHandle[]>([]);
 
   useEffect(() => { if (!loaded) void load(); }, [loaded, load]);
   useEffect(() => { if (decks.length && !deckId) setDeckId((decks.find((d) => d.isDefault) ?? decks[0]!).id); }, [decks, deckId]);
-  useEffect(() => () => transportRef.current?.close(), []);
+  useEffect(() => () => cleanup(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const myDeck = (): Deck | undefined => decks.find((d) => d.id === deckId);
   const rerender = () => setTick((t) => t + 1);
 
-  function startGameHandshake(t: WebRtcTransport, role: "host" | "follower") {
-    // Handshake: follower announces its deck; host builds the shared base and
-    // sends it; both then run the host-authoritative NetGame.
+  function cleanup() {
+    discHandles.current.forEach((h) => void h.remove());
+    discHandles.current = [];
+    void LocalNet.stopDiscovery().catch(() => {});
+    transportRef.current?.close();
+    transportRef.current = null;
+    gameRef.current = null;
+  }
+
+  /** Host: build the shared base on HELLO, start the NetGame, send INIT. */
+  function wireHost(t: HostTransport) {
     t.onReceive((msg) => {
-      if (role === "host" && msg.t === "HELLO" && index && !gameRef.current) {
+      if (msg.t === "HELLO" && index && !gameRef.current) {
         const mine = myDeck();
         if (!mine) return;
         const base = createGame({
@@ -52,7 +68,7 @@ export function LocalPlayScreen() {
           seed: `${Date.now()}-${Math.random()}`,
           lookup: (id) => index.get(id),
           players: {
-            1: { name: mine.name, deck: mine.cards.flatMap((c) => Array<string>(c.count).fill(c.id)) },
+            1: { name: mine.name, deck: flatten(mine) },
             2: { name: msg.name, deck: msg.deck },
           },
         });
@@ -60,127 +76,140 @@ export function LocalPlayScreen() {
         t.send({ t: "INIT", baseSnapshot: base });
         setPhase("connected");
         rerender();
-      } else if (role === "follower" && msg.t === "INIT" && !gameRef.current) {
+      }
+    });
+  }
+
+  function wireFollower(t: WsClientTransport) {
+    t.onReceive((msg) => {
+      if (msg.t === "INIT" && !gameRef.current) {
         gameRef.current = new NetGame(t, "follower", msg.baseSnapshot, rerender);
         setPhase("connected");
         rerender();
       }
     });
     t.onOpen(() => {
-      setStatus("Connected!");
-      if (role === "follower") {
-        const mine = myDeck();
-        if (mine) t.send({ t: "HELLO", name: mine.name, deck: mine.cards.flatMap((c) => Array<string>(c.count).fill(c.id)) });
-      }
+      const mine = myDeck();
+      if (mine) t.send({ t: "HELLO", name: mine.name, deck: flatten(mine) });
+      setStatus("Connected — syncing…");
     });
   }
 
-  async function hostCreate() {
+  async function host() {
+    const mine = myDeck();
+    if (!mine) return;
     try {
-      const t = new WebRtcTransport("host");
+      setPhase("hosting");
+      setStatus("Starting host…");
+      const t = new HostTransport();
       transportRef.current = t;
-      startGameHandshake(t, "host");
-      setPhase("host");
-      setStatus("Generating invite…");
-      setMyCode(await t.createOffer());
-      setStatus("Share the code, then paste their reply.");
+      wireHost(t);
+      t.onOpen(() => setStatus("Opponent connected — syncing…"));
+      await t.start(mine.name);
+      setStatus(`Hosting as "${mine.name}" — waiting for a player to join…`);
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "WebRTC unavailable");
+      setStatus(e instanceof Error ? e.message : "Host failed");
       setPhase("error");
     }
   }
 
-  async function hostAcceptAnswer() {
-    await transportRef.current?.acceptAnswer(peerCode.trim());
-    setStatus("Connecting…");
-  }
-
-  async function joinAcceptOffer() {
+  async function join() {
     try {
-      const t = new WebRtcTransport("follower");
-      transportRef.current = t;
-      startGameHandshake(t, "follower");
-      setMyCode(await t.acceptOffer(peerCode.trim()));
-      setStatus("Share your reply with the host.");
+      setPhase("joining");
+      setStatus("Searching for games on this network…");
+      setPeers([]);
+      discHandles.current.push(
+        await LocalNet.addListener("peerFound", (p) => setPeers((prev) => (prev.some((x) => x.name === p.name) ? prev : [...prev, p]))),
+        await LocalNet.addListener("peerLost", (p) => setPeers((prev) => prev.filter((x) => x.name !== p.name))),
+      );
+      await LocalNet.startDiscovery();
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "WebRTC unavailable");
+      setStatus(e instanceof Error ? e.message : "Discovery failed");
       setPhase("error");
     }
+  }
+
+  function connectTo(peer: DiscoveredPeer) {
+    setPhase("connecting");
+    setStatus(`Connecting to ${peer.name}…`);
+    void LocalNet.stopDiscovery().catch(() => {});
+    const t = new WsClientTransport(peer);
+    transportRef.current = t;
+    wireFollower(t);
   }
 
   if (loaded && decks.length === 0) {
     return (
       <div className="space-y-3 text-center">
-        <p className="text-sm text-slate-400">Create a deck first to play online.</p>
+        <p className="text-sm text-slate-400">Create a deck first to play.</p>
         <button onClick={() => navigate("/decks")} className="min-h-tap rounded-xl bg-ink-sapphire px-4 font-semibold text-white">Go to Decks</button>
       </div>
     );
   }
 
-  if (phase === "connected" && gameRef.current && index) {
-    return <NetBoard game={gameRef.current} viewer={gameRef.current.role === "host" ? 1 : 2} onLeave={() => { transportRef.current?.close(); navigate("/play"); }} />;
+  if (!localPlaySupported()) {
+    return (
+      <div className="mx-auto max-w-md space-y-3">
+        <h1 className="text-lg font-semibold text-slate-100">Local Play</h1>
+        <p className="text-sm text-amber-200">Network play needs the installed Android app (it uses on-device discovery). Open this in the APK build.</p>
+        <button onClick={() => navigate("/play")} className="text-xs text-slate-500 underline">Back</button>
+      </div>
+    );
   }
 
-  const DeckPicker = (
-    <select value={deckId} onChange={(e) => setDeckId(e.target.value)} className="min-h-tap w-full rounded-lg bg-white/5 px-3 text-slate-100 ring-1 ring-white/10">
-      {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-    </select>
-  );
+  if (phase === "connected" && gameRef.current && index) {
+    return <NetBoard game={gameRef.current} viewer={gameRef.current.role === "host" ? 1 : 2} onLeave={() => { cleanup(); navigate("/play"); }} />;
+  }
 
   return (
     <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-lg font-semibold text-slate-100">Local Play (WebRTC)</h1>
-      <p className="text-xs text-slate-400">Pair two devices on the same Wi-Fi/hotspot. Share codes by QR or copy/paste.</p>
-      {DeckPicker}
+      <h1 className="text-lg font-semibold text-slate-100">Local Play</h1>
+      <p className="text-xs text-slate-400">Both devices on the same WiFi or hotspot. One hosts, the other joins — no codes.</p>
+
+      <label className="block">
+        <span className="mb-1 block text-xs text-slate-400">Your deck</span>
+        <select value={deckId} onChange={(e) => setDeckId(e.target.value)} className="min-h-tap w-full rounded-lg bg-white/5 px-3 text-slate-100 ring-1 ring-white/10">
+          {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      </label>
+
       {status && <p className="text-xs text-emerald-300">{status}</p>}
 
       {phase === "menu" && (
         <div className="flex gap-2">
-          <button onClick={hostCreate} className="min-h-tap flex-1 rounded-xl bg-ink-sapphire font-semibold text-white">Host game</button>
-          <button onClick={() => { setPhase("join"); setStatus("Paste the host's invite code."); }} className="min-h-tap flex-1 rounded-xl bg-white/10 font-semibold text-white">Join game</button>
+          <button onClick={host} className="min-h-tap flex-1 rounded-xl bg-ink-sapphire font-semibold text-white">Host game</button>
+          <button onClick={join} className="min-h-tap flex-1 rounded-xl bg-white/10 font-semibold text-white">Join game</button>
         </div>
       )}
 
-      {phase === "host" && (
-        <div className="space-y-3">
-          <CodeBlock label="1. Your invite (show/scan or copy)" code={myCode} />
-          <PasteBlock label="2. Paste their reply" value={peerCode} onChange={setPeerCode} onSubmit={hostAcceptAnswer} cta="Connect" />
+      {phase === "hosting" && (
+        <div className="flex items-center gap-2 text-sm text-slate-300">
+          <span className="h-3 w-3 animate-pulse rounded-full bg-emerald-400" /> Waiting for a player…
         </div>
       )}
 
-      {phase === "join" && (
-        <div className="space-y-3">
-          <PasteBlock label="1. Paste host's invite" value={peerCode} onChange={setPeerCode} onSubmit={joinAcceptOffer} cta="Generate reply" />
-          {myCode && <CodeBlock label="2. Send this reply back to the host" code={myCode} />}
+      {phase === "joining" && (
+        <div className="space-y-2">
+          <p className="text-sm text-slate-300">Hosting games found:</p>
+          {peers.length === 0 && <p className="text-xs text-slate-500">Searching… make sure the other device tapped “Host”.</p>}
+          <ul className="space-y-1">
+            {peers.map((p) => (
+              <li key={p.name}>
+                <button onClick={() => connectTo(p)} className="min-h-tap w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left font-semibold text-slate-100 active:bg-white/10">
+                  {p.name} <span className="text-xs text-slate-500">({p.host})</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
       {phase === "error" && <p className="text-sm text-rose-300">{status}</p>}
 
-      <button onClick={() => navigate("/play")} className="text-xs text-slate-500 underline">Back</button>
-    </div>
-  );
-}
-
-function CodeBlock({ label, code }: { label: string; code: string }) {
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-slate-300">{label}</p>
-      {code && <div className="flex justify-center"><QrCode value={code} /></div>}
-      <div className="flex gap-2">
-        <input readOnly value={code} className="min-w-0 flex-1 rounded bg-white/5 px-2 py-1 text-[10px] text-slate-400 ring-1 ring-white/10" />
-        <button onClick={() => navigator.clipboard?.writeText(code)} className="rounded bg-white/10 px-2 text-xs">Copy</button>
-      </div>
-    </div>
-  );
-}
-
-function PasteBlock({ label, value, onChange, onSubmit, cta }: { label: string; value: string; onChange: (v: string) => void; onSubmit: () => void; cta: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs text-slate-300">{label}</p>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className="w-full rounded bg-white/5 p-2 font-mono text-[10px] text-slate-100 ring-1 ring-white/10" />
-      <button onClick={onSubmit} disabled={!value.trim()} className="min-h-tap w-full rounded-lg bg-ink-sapphire font-semibold text-white disabled:opacity-40">{cta}</button>
+      {phase !== "menu" && phase !== "connected" && (
+        <button onClick={() => { cleanup(); setPhase("menu"); setStatus(""); }} className="text-xs text-slate-500 underline">Cancel</button>
+      )}
+      <button onClick={() => navigate("/play")} className="block text-xs text-slate-500 underline">Back</button>
     </div>
   );
 }

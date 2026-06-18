@@ -1,0 +1,203 @@
+package com.inkforge.localplay
+
+import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
+import com.getcapacitor.JSObject
+import com.getcapacitor.Plugin
+import com.getcapacitor.PluginCall
+import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.CapacitorPlugin
+import fi.iki.elonen.NanoHTTPD
+import fi.iki.elonen.NanoWSD
+import fi.iki.elonen.NanoWSD.WebSocket
+import fi.iki.elonen.NanoWSD.WebSocketFrame
+import java.io.IOException
+import java.util.ArrayDeque
+
+/**
+ * Local-network play (spec §8, revised): zero-config discovery + direct
+ * connection on the shared network. The host runs a NanoHTTPD WebSocket server
+ * and advertises it via Android NSD; followers browse NSD and connect with a
+ * plain WebSocket. Messages bridge to JS via plugin events.
+ */
+@CapacitorPlugin(name = "LocalNet")
+class LocalNetPlugin : Plugin() {
+
+    private val serviceType = "_inkforge._tcp."
+    private var nsdManager: NsdManager? = null
+    private var server: WsServer? = null
+    private var regListener: NsdManager.RegistrationListener? = null
+    private var discListener: NsdManager.DiscoveryListener? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+
+    // NSD resolve is single-flight on older Android; serialize requests.
+    private val resolveQueue = ArrayDeque<NsdServiceInfo>()
+    private var resolving = false
+
+    private fun emit(event: String, data: JSObject = JSObject()) {
+        activity?.runOnUiThread { notifyListeners(event, data) }
+    }
+
+    private fun nsd(): NsdManager =
+        (context.getSystemService(Context.NSD_SERVICE) as NsdManager).also { nsdManager = it }
+
+    // ---- Host ----
+
+    @PluginMethod
+    fun startHost(call: PluginCall) {
+        val name = call.getString("name") ?: "Lorcana game"
+        try {
+            val srv = WsServer(0)
+            srv.start(0, true)
+            val port = srv.listeningPort
+            server = srv
+            registerService(name, port)
+            val ret = JSObject()
+            ret.put("port", port)
+            ret.put("name", name)
+            call.resolve(ret)
+        } catch (e: Exception) {
+            call.reject("startHost failed: ${e.message}")
+        }
+    }
+
+    private fun registerService(name: String, port: Int) {
+        val info = NsdServiceInfo().apply {
+            serviceName = name
+            serviceType = this@LocalNetPlugin.serviceType
+            setPort(port)
+        }
+        val listener = object : NsdManager.RegistrationListener {
+            override fun onServiceRegistered(arg0: NsdServiceInfo) {}
+            override fun onRegistrationFailed(arg0: NsdServiceInfo, errorCode: Int) {}
+            override fun onServiceUnregistered(arg0: NsdServiceInfo) {}
+            override fun onUnregistrationFailed(arg0: NsdServiceInfo, errorCode: Int) {}
+        }
+        regListener = listener
+        nsd().registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
+    }
+
+    @PluginMethod
+    fun stopHost(call: PluginCall) {
+        try { regListener?.let { nsdManager?.unregisterService(it) } } catch (_: Exception) {}
+        regListener = null
+        server?.stop()
+        server = null
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun send(call: PluginCall) {
+        server?.broadcast(call.getString("data") ?: "")
+        call.resolve()
+    }
+
+    // ---- Discovery (follower) ----
+
+    @PluginMethod
+    fun startDiscovery(call: PluginCall) {
+        try {
+            val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val lock = wifi.createMulticastLock("inkforge-nsd").apply { setReferenceCounted(true); acquire() }
+            multicastLock = lock
+        } catch (_: Exception) {}
+
+        val listener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(serviceType: String) {}
+            override fun onDiscoveryStopped(serviceType: String) {}
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+            override fun onServiceFound(service: NsdServiceInfo) { queueResolve(service) }
+            override fun onServiceLost(service: NsdServiceInfo) {
+                val o = JSObject(); o.put("name", service.serviceName); emit("peerLost", o)
+            }
+        }
+        discListener = listener
+        try {
+            nsd().discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
+            call.resolve()
+        } catch (e: Exception) {
+            call.reject("discovery failed: ${e.message}")
+        }
+    }
+
+    private fun queueResolve(service: NsdServiceInfo) {
+        synchronized(resolveQueue) {
+            resolveQueue.add(service)
+            if (!resolving) resolveNext()
+        }
+    }
+
+    private fun resolveNext() {
+        val service: NsdServiceInfo
+        synchronized(resolveQueue) {
+            if (resolveQueue.isEmpty()) { resolving = false; return }
+            resolving = true
+            service = resolveQueue.poll()
+        }
+        val manager = nsdManager ?: return
+        val resolveListener = object : NsdManager.ResolveListener {
+            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                synchronized(resolveQueue) { resolving = false }
+                resolveNext()
+            }
+            override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                val o = JSObject()
+                o.put("name", serviceInfo.serviceName)
+                o.put("host", serviceInfo.host?.hostAddress ?: "")
+                o.put("port", serviceInfo.port)
+                emit("peerFound", o)
+                synchronized(resolveQueue) { resolving = false }
+                resolveNext()
+            }
+        }
+        try {
+            manager.resolveService(service, resolveListener)
+        } catch (_: Exception) {
+            synchronized(resolveQueue) { resolving = false }
+            resolveNext()
+        }
+    }
+
+    @PluginMethod
+    fun stopDiscovery(call: PluginCall) {
+        try { discListener?.let { nsdManager?.stopServiceDiscovery(it) } } catch (_: Exception) {}
+        discListener = null
+        try { multicastLock?.release() } catch (_: Exception) {}
+        multicastLock = null
+        call.resolve()
+    }
+
+    // ---- WebSocket server ----
+
+    inner class WsServer(port: Int) : NanoWSD(port) {
+        @Volatile
+        var socket: WebSocket? = null
+
+        override fun openWebSocket(handshake: NanoHTTPD.IHTTPSession): WebSocket {
+            return object : WebSocket(handshake) {
+                override fun onOpen() {
+                    socket = this
+                    emit("peerConnected")
+                }
+                override fun onClose(code: WebSocketFrame.CloseCode?, reason: String?, initiatedByRemote: Boolean) {
+                    socket = null
+                    emit("peerDisconnected")
+                }
+                override fun onMessage(message: WebSocketFrame) {
+                    val o = JSObject()
+                    o.put("data", message.textPayload)
+                    emit("message", o)
+                }
+                override fun onPong(pong: WebSocketFrame) {}
+                override fun onException(exception: IOException) {}
+            }
+        }
+
+        fun broadcast(text: String) {
+            try { socket?.send(text) } catch (_: IOException) {}
+        }
+    }
+}
