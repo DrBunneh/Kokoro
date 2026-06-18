@@ -686,5 +686,49 @@
   "beprepared": [
     { "trigger": "on_play", "steps": [{ "do": "banishAll", "scope": "any" }] }
   ],
+  "brawl": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "filter": { "maxStrength": 2 }, "text": "banish chosen character with 2 ¤ or less" },
+      { "do": "banish", "to": "t" }
+    ] }
+  ],
+  "worldsgreatestcriminalmind": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "filter": { "minStrength": 5 }, "text": "banish chosen character with 5 ¤ or more" },
+      { "do": "banish", "to": "t" }
+    ] }
+  ],
+  "letthestormrageon": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "deal 2 damage to chosen character" },
+      { "do": "dealDamage", "to": "t", "amount": 2 },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "andthenalongcamezeus": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "any", "optional": true, "text": "deal 5 damage to chosen character" },
+      { "do": "dealDamage", "to": "t", "amount": 5 }
+    ] }
+  ],
+  "friendsontheotherside": [
+    { "trigger": "on_play", "steps": [{ "do": "draw", "player": "self", "amount": 2 }] }
+  ],
+  "dellasmoonlullaby": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "t", "scope": "enemy", "optional": true, "text": "chosen opposing character gets -2 ¤ this turn" },
+      { "do": "debuff", "to": "t", "strength": 2, "duration": "end_of_turn" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
+  "paintingtherosesred": [
+    { "trigger": "on_play", "steps": [
+      { "do": "chooseCharacter", "as": "a", "scope": "any", "optional": true, "text": "a chosen character gets -1 ¤ this turn" },
+      { "do": "debuff", "to": "a", "strength": 1, "duration": "end_of_turn" },
+      { "do": "chooseCharacter", "as": "b", "scope": "any", "optional": true, "text": "a second chosen character gets -1 ¤ this turn" },
+      { "do": "debuff", "to": "b", "strength": 1, "duration": "end_of_turn" },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

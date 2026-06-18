@@ -315,6 +315,25 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[2].discard.some((c) => c.instanceId === "t1")).toBe(true);
   });
 
+  it("resolves seeded action slugs via the synthetic ability path (Brawl)", () => {
+    // Brawl: banish chosen character with 2 strength or less (filter enforced).
+    const effects: CardEffects = {
+      brawl: [{ trigger: "on_play", steps: [{ do: "chooseCharacter", as: "t", scope: "any", optional: true, filter: { maxStrength: 2 } }, { do: "banish", to: "t" }] }],
+    };
+    const lookup: CardLookup = (id) =>
+      id.includes("-a") ? printed(id, { type: "action", fullName: "Brawl", rulesText: "Banish chosen character with 2 {S} or less." }) : printed(id);
+    let g = toPlay(lookup);
+    const weak = { instanceId: "weak", printed: printed("weak", { strength: 2, willpower: 4 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    const strong = { instanceId: "strong", printed: printed("strong", { strength: 5, willpower: 4 }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] };
+    g.players[2].field.push(weak, strong);
+    g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }, effects).state;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: g.players[1].hand[0]!.instanceId }, effects).state;
+    expect(g.pendingPrompts[0]!.pick).toBe("character");
+    expect(() => reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "strong" }, effects)).toThrow(/legal target/i);
+    g = reduce(g, { type: "RESPOND_TO_PROMPT", promptId: g.pendingPrompts[0]!.id, targetInstanceId: "weak" }, effects).state;
+    expect(g.players[2].discard.some((c) => c.instanceId === "weak")).toBe(true);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;
