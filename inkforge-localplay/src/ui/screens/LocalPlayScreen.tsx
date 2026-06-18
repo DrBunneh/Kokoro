@@ -67,14 +67,12 @@ export function LocalPlayScreen() {
   }
 
   /** Host: build the shared base on HELLO, start the NetGame, send INIT. */
-  function wireHost(t: HostTransport) {
+  function wireHost(t: HostTransport, mine: Deck) {
     t.onReceive((msg) => {
       if (msg.t !== "HELLO") return;
       if (gameRef.current) { nlog("host", "ignoring duplicate HELLO (game already started)", "warn"); return; }
       if (!index) { nlog("host", "received HELLO but card DB not ready yet", "error"); return; }
-      const mine = myDeck();
-      if (!mine) { nlog("host", "received HELLO but no host deck selected", "error"); return; }
-      nlog("host", `received HELLO from "${msg.name}" (${msg.deck.length}-card deck) — building game, sending INIT`);
+      nlog("host", `received HELLO from "${msg.name}" (${msg.deck.length}-card deck) — building game with "${mine.name}", sending INIT`);
       const base = createGame({
         id: crypto.randomUUID(),
         seed: `${Date.now()}-${Math.random()}`,
@@ -92,7 +90,7 @@ export function LocalPlayScreen() {
     });
   }
 
-  function wireFollower(t: WsClientTransport) {
+  function wireFollower(t: WsClientTransport, mine: Deck) {
     t.onReceive((msg) => {
       if (msg.t === "INIT" && !gameRef.current) {
         nlog("follower", "received INIT — game starting");
@@ -102,9 +100,8 @@ export function LocalPlayScreen() {
       }
     });
     t.onOpen(() => {
-      const mine = myDeck();
-      if (mine) { nlog("follower", `socket open — sending HELLO ("${mine.name}", ${flatten(mine).length} cards)`); t.send({ t: "HELLO", name: mine.name, deck: flatten(mine) }); }
-      else nlog("follower", "socket open but no deck selected — cannot send HELLO", "error");
+      nlog("follower", `socket open — sending HELLO ("${mine.name}", ${flatten(mine).length} cards)`);
+      t.send({ t: "HELLO", name: mine.name, deck: flatten(mine) });
       setStatus("Connected — syncing…");
     });
   }
@@ -117,7 +114,7 @@ export function LocalPlayScreen() {
       setStatus("Starting host…");
       const t = new HostTransport();
       transportRef.current = t;
-      wireHost(t);
+      wireHost(t, mine);
       t.onOpen(() => setStatus("Opponent connected — syncing…"));
       const info = await t.start(mine.name);
       setHostInfo(info);
@@ -145,13 +142,15 @@ export function LocalPlayScreen() {
   }
 
   function connectTo(peer: DiscoveredPeer) {
+    const mine = myDeck();
+    if (!mine) { setStatus("Pick a deck first."); return; }
     setPhase("connecting");
     setStatus(`Connecting to ${peer.name} (${peer.host}:${peer.port})…`);
-    nlog("follower", `connecting to "${peer.name}" at ${peer.host}:${peer.port}`);
+    nlog("follower", `connecting to "${peer.name}" at ${peer.host}:${peer.port} with deck "${mine.name}"`);
     void LocalNet.stopDiscovery().catch(() => {});
     const t = new WsClientTransport(peer);
     transportRef.current = t;
-    wireFollower(t);
+    wireFollower(t, mine);
     // Allow ~4s per candidate address (multi-homed hosts) before giving up.
     const cap = Math.max(10000, ([peer.host, ...(peer.addresses ?? [])].length) * 4500 + 2000);
     setTimeout(() => {
