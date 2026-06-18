@@ -59,6 +59,8 @@ export type Step =
   | { do: "lookAtTop"; count: number; rest?: "bottom" | "inkwellExerted"; filter?: ScryFilter; keepUpTo?: number; optional?: boolean; text?: string }
   // Banish every character (Be Prepared) — or a scoped subset.
   | { do: "banishAll"; scope?: Scope }
+  // "Pay N less for the next matching card you play this turn."
+  | { do: "grantDiscount"; amount: number; cardType?: CardType; subtypes?: string[]; uses?: number }
   // Choose a card from your own hand (suspends for a hand tap):
   | { do: "chooseFromHand"; as: string; text?: string; optional?: boolean }
   // Move a bound (hand) card into the inkwell / discard:
@@ -238,6 +240,16 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
         if (i >= 0) arr.splice(i, 1);
         state.players[loc.owner].discard.push(t);
       }
+      break;
+    }
+    case "grantDiscount": {
+      state.players[ctx.controller].discounts.push({
+        amount: step.amount,
+        cardType: step.cardType,
+        subtypes: step.subtypes,
+        uses: step.uses ?? 1,
+      });
+      logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "ABILITY_TRIGGERED", message: `Pay ${step.amount} less for the next ${step.cardType ?? "card"}` }));
       break;
     }
     case "banishAll": {

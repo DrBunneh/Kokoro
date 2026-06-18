@@ -82,7 +82,7 @@ function buildDeck(lookup: CardLookup, ids: string[], player: PlayerId): CardIns
 }
 
 function emptyPlayer(name: string, deck: CardInstance[]): PlayerState {
-  return { name, hand: [], field: [], items: [], inkwell: [], discard: [], deck, lore: 0 };
+  return { name, hand: [], field: [], items: [], inkwell: [], discard: [], deck, lore: 0, discounts: [] };
 }
 
 /**
@@ -129,6 +129,28 @@ function effectiveLore(card: CardInstance): number {
 /** Ready (un-exerted) ink available to pay costs. */
 function readyInk(p: PlayerState): CardInstance[] {
   return p.inkwell.filter((c) => !c.exerted);
+}
+
+/** Discounts that apply to playing this card (type + subtype match). */
+function matchingDiscounts(p: PlayerState, card: CardInstance["printed"]) {
+  return p.discounts.filter(
+    (d) =>
+      d.uses > 0 &&
+      (!d.cardType || d.cardType === card.type) &&
+      (!d.subtypes || d.subtypes.some((s) => card.subtypes.some((cs) => cs.toLowerCase() === s.toLowerCase()))),
+  );
+}
+
+/** Cost after applicable "pay N less" discounts (never below 0). */
+function effectiveCost(p: PlayerState, card: CardInstance["printed"]): number {
+  const reduction = matchingDiscounts(p, card).reduce((sum, d) => sum + d.amount, 0);
+  return Math.max(0, card.cost - reduction);
+}
+
+/** Consume one use of each discount applied to this play; drop depleted ones. */
+function consumeDiscounts(p: PlayerState, card: CardInstance["printed"]): void {
+  for (const d of matchingDiscounts(p, card)) d.uses -= 1;
+  p.discounts = p.discounts.filter((d) => d.uses > 0);
 }
 
 /** Pay a cost by exerting that many ready ink. Caller must check affordability. */
@@ -444,10 +466,11 @@ export function reduce(
         return { state: next, logs };
       }
 
-      // --- Normal play: pay ink ---
-      const cost = card.printed.cost;
+      // --- Normal play: pay ink (after any "pay N less" discounts) ---
+      const cost = effectiveCost(p, card.printed);
       if (readyInk(p).length < cost) throw new GameError("Not enough ink");
       payInk(p, cost);
+      consumeDiscounts(p, card.printed);
       p.hand.splice(idx, 1);
 
       switch (card.printed.type) {
@@ -703,6 +726,8 @@ export function reduce(
       }
       // Freshly-inked cards flip to face-down at the end of the turn they were played.
       for (const c of next.players[ending].inkwell) c.justPlayed = false;
+      // "Pay N less this turn" discounts expire at end of turn.
+      next.players[ending].discounts = [];
       logs.push(log({ turnNumber: next.turnNumber, player: ending, type: "TURN_END", message: `${next.players[ending].name} ends turn` }));
       next.turnNumber += 1;
       startTurn(next, otherPlayer(ending), logs, false);

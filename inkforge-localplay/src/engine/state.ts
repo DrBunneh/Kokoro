@@ -39,6 +39,16 @@ export interface CardInstance {
   cardsUnder: CardInstance[];
 }
 
+/** A turn-scoped "pay N less for the next matching play" discount. */
+export interface Discount {
+  amount: number;
+  cardType?: import("@/data/card-types").CardType;
+  /** If set, the played card must have one of these subtypes (e.g. Princess/Queen). */
+  subtypes?: string[];
+  /** Remaining applications this turn. */
+  uses: number;
+}
+
 export interface PlayerState {
   name: string;
   hand: CardInstance[];
@@ -48,6 +58,8 @@ export interface PlayerState {
   discard: CardInstance[];
   deck: CardInstance[]; // ordered; top = index 0
   lore: number;
+  /** Pending "pay N less" discounts, cleared at end of turn. */
+  discounts: Discount[];
 }
 
 export interface CoinToss {

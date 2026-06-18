@@ -363,6 +363,26 @@ describe("Effect DSL + the bag", () => {
     expect(g.players[1].hand.length).toBe(handBefore); // kept nothing
   });
 
+  it("cost reduction: grantDiscount lowers the next matching play, once", () => {
+    const effects: CardEffects = {
+      cheaper: [{ trigger: "on_play", steps: [{ do: "grantDiscount", amount: 2, cardType: "character", uses: 1 }] }],
+    };
+    // Deck cards are plain cost-3 characters; the discounter item is injected.
+    const lookup: CardLookup = (id) => printed(id, { type: "character", cost: 3, willpower: 3 });
+    let g = toPlay(lookup);
+    // Give the player plenty of ready ink, plus the discounter item in hand.
+    g.players[1].inkwell = Array.from({ length: 6 }, (_, j) => ({ instanceId: `ink${j}`, printed: printed(`ink${j}`), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] }));
+    g.players[1].hand.push({ instanceId: "disc", printed: printed("disc", { type: "item", cost: 1, specialAbilities: [{ name: "Cheaper", slug: "cheaper", effect: "You pay 2 less for the next character." }] }), damage: 0, exerted: false, justPlayed: false, appliedEffects: [], cardsUnder: [] });
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: "disc" }, effects).state;
+    expect(g.players[1].discounts).toHaveLength(1);
+    const readyBefore = g.players[1].inkwell.filter((c) => !c.exerted).length;
+    const charId = g.players[1].hand.find((c) => c.printed.type === "character")!.instanceId;
+    g = reduce(g, { type: "PLAY_CARD", cardInstanceId: charId }, effects).state;
+    // Character costs 3, discounted to 1 → only 1 ink exerted, discount consumed.
+    expect(g.players[1].inkwell.filter((c) => !c.exerted).length).toBe(readyBefore - 1);
+    expect(g.players[1].discounts).toHaveLength(0);
+  });
+
   it("MANUAL_ADJUST edits damage and lore (recorded as a normal action)", () => {
     let g = toPlay((id) => printed(id)); // no abilities
     g = reduce(g, { type: "ADD_TO_INK", cardInstanceId: g.players[1].hand[1]!.instanceId }).state;

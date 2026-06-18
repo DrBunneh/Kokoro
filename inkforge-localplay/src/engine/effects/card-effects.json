@@ -739,5 +739,14 @@
   "lookatthisfamily": [
     { "trigger": "on_play", "steps": [{ "do": "lookAtTop", "count": 5, "rest": "bottom", "optional": true, "keepUpTo": 2, "filter": { "cardType": "character" }, "text": "you may reveal up to 2 characters from the top 5" }] }
   ],
+  "royalwelcome": [
+    { "trigger": "on_quest", "steps": [{ "do": "grantDiscount", "amount": 1, "cardType": "character", "subtypes": ["Princess", "Queen"], "uses": 1 }] }
+  ],
+  "akoodetemuti": [
+    { "trigger": "on_play", "steps": [
+      { "do": "grantDiscount", "amount": 2, "cardType": "character", "uses": 1 },
+      { "do": "draw", "player": "self", "amount": 1 }
+    ] }
+  ],
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }
