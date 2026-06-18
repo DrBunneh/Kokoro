@@ -11,7 +11,7 @@
  * the compiled binary and cannot be OTA'd; the manifest's `minNativeBuild`
  * lets us detect that and ask the user to install a fresh APK instead.
  */
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
 
@@ -67,12 +67,26 @@ async function nativeBuild(): Promise<number> {
   }
 }
 
+/**
+ * Fetch the manifest via Capacitor's native HTTP, which bypasses the WebView's
+ * CORS enforcement (GitHub release assets don't send CORS headers, so a plain
+ * `fetch` is blocked). Native HTTP also follows the asset redirect.
+ */
+async function fetchManifest(): Promise<UpdateManifest> {
+  const res = await CapacitorHttp.get({
+    url: MANIFEST_URL,
+    headers: { "Cache-Control": "no-cache" },
+    params: { t: String(Date.now()) },
+  });
+  if (res.status < 200 || res.status >= 300) throw new Error(`Manifest HTTP ${res.status}`);
+  // CapacitorHttp auto-parses JSON responses; tolerate a string body too.
+  return (typeof res.data === "string" ? JSON.parse(res.data) : res.data) as UpdateManifest;
+}
+
 export async function checkForUpdate(): Promise<UpdateCheck> {
   if (!isNative()) return { kind: "unsupported" };
   try {
-    const res = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) return { kind: "error", message: `Manifest ${res.status}` };
-    const manifest = (await res.json()) as UpdateManifest;
+    const manifest = await fetchManifest();
     const [current, build] = await Promise.all([currentBundleVersion(), nativeBuild()]);
 
     if (manifest.minNativeBuild > build) {
