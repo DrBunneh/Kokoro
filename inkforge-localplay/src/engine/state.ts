@@ -43,6 +43,8 @@ export interface CardInstance {
   appliedEffects: AppliedEffect[];
   /** Shift stacks / tucked cards. */
   cardsUnder: CardInstance[];
+  /** Number of cards that were under this card when it was last banished (on_banish payoffs). */
+  banishedUnderCount?: number;
   /** Readied but barred from questing for the rest of this turn (Lilo - Causing an Uproar). */
   questLockedThisTurn?: boolean;
   /** Used this turn's one-time damage shield (Lilo - Bundled Up "extra layers"). */

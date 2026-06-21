@@ -293,6 +293,12 @@ export type Step =
   | { do: "putTopUnder"; to: string }
   // Put all cards under a bound character into your hand (Alice - Well-Read Whisper):
   | { do: "cardsUnderToHand"; from: string }
+  // Move all cards under a bound character/item/location to a zone (Come Out and Fight):
+  | { do: "cardsUnderTo"; from: string; to: "hand" | "inkwellExerted" | "bottom" }
+  // Harvest all cards from under all your characters/locations into a zone (Visiting Christmas Past):
+  | { do: "harvestUnder"; to: "hand" | "inkwellExerted" | "bottom" }
+  // Each opponent discards a card per card that was under the source (Goofy - Jacob Marley):
+  | { do: "opponentDiscardPerUnder" }
   // Remove up to `amount` damage from every character in scope (Piglet - Cocoa Maker):
   | { do: "removeDamageAll"; scope?: Scope; amount: number }
   // Put up to `amount` cards from a player's discard on the bottom of their deck (Taran, Anna):
@@ -319,6 +325,9 @@ export type Step =
   | { do: "discard"; player?: Who; amount?: number }
   // A player reveals their hand (informational — a no-op in the hot-seat sim):
   | { do: "revealHand"; player?: Who }
+  // Run `steps` for each target player, with that player as the controller — each
+  // resolves their own copy (Escape Plan, Kida-Crystal flood-of-power).
+  | { do: "eachPlayer"; who?: "each" | "opponents"; steps: Step[] }
   | { do: "gainLore" | "loseLore"; player?: Who; amount?: number };
 
 export interface EffectDef {
@@ -463,6 +472,17 @@ function dynAmount(state: GameState, ctx: EffectContext, base: number | undefine
   let n = charsInScope(state, ctx.controller, per.scope).length;
   if (per.excludeSelf) n = Math.max(0, n - 1);
   return n;
+}
+
+/** Move a set of "under" cards to a destination zone for `controller`. */
+function moveUnderCards(state: GameState, controller: PlayerId, cards: CardInstance[], to: "hand" | "inkwellExerted" | "bottom"): void {
+  const p = state.players[controller];
+  for (const c of cards) {
+    c.damage = 0; c.justPlayed = to === "inkwellExerted"; c.exerted = to === "inkwellExerted"; c.appliedEffects = [];
+    if (to === "hand") p.hand.push(c);
+    else if (to === "inkwellExerted") p.inkwell.push(c);
+    else p.deck.push(c);
+  }
 }
 
 /** Apply damage to a character, banishing it (and recording so) if it dies. */
@@ -940,6 +960,26 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       }
       break;
     }
+    case "cardsUnderTo": {
+      const t = resolveTarget(state, ctx, step.from);
+      if (t && t.cardsUnder.length > 0) {
+        moveUnderCards(state, ctx.controller, t.cardsUnder, step.to);
+        t.cardsUnder = [];
+      }
+      break;
+    }
+    case "harvestUnder": {
+      const p = state.players[ctx.controller];
+      for (const src of [...p.field]) {
+        if (src.cardsUnder.length > 0) { moveUnderCards(state, ctx.controller, src.cardsUnder, step.to); src.cardsUnder = []; }
+      }
+      break;
+    }
+    case "opponentDiscardPerUnder": {
+      const n = ctx.source.banishedUnderCount ?? ctx.source.cardsUnder.length;
+      if (n > 0) applyStep(state, { do: "opponentDiscard", amount: n }, ctx, logs);
+      break;
+    }
     case "removeDamageAll": {
       let removedAny = false;
       for (const c of charsInScope(state, ctx.controller, step.scope ?? "ally")) {
@@ -1003,6 +1043,22 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     case "revealHand": {
       const pid = player(ctx, step.player);
       logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "ABILITY_TRIGGERED", message: `${state.players[pid].name} reveals their hand` }));
+      break;
+    }
+    case "eachPlayer": {
+      const targets: PlayerId[] = step.who === "opponents" ? [otherPlayer(ctx.controller)] : [ctx.controller, otherPlayer(ctx.controller)];
+      for (const pid of targets) {
+        const subCtx: EffectContext = { controller: pid, source: ctx.source, vars: {}, banished: ctx.banished, events: ctx.events };
+        const susp = runSteps(state, step.steps, subCtx, logs);
+        if (susp) {
+          state.pendingPrompts.push({
+            id: uid(), player: pid, controller: pid, sourceInstanceId: ctx.source.instanceId,
+            kind: "eachplayer", text: susp.text ?? "Resolve", auto: false,
+            scope: susp.scope, pick: susp.pick, reveal: susp.reveal, handOwner: susp.handOwner, modes: susp.modes,
+            resume: { steps: susp.steps, vars: subCtx.vars },
+          });
+        }
+      }
       break;
     }
     case "gainLore": {

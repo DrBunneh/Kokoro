@@ -25,6 +25,9 @@ export function banishCard(p: PlayerState, card: CardInstance, logs: LogEntry[],
     const ii = p.items.indexOf(card);
     if (ii >= 0) p.items.splice(ii, 1);
   }
+  // Snapshot the under-count before clearing, so on_banish effects can read it.
+  card.banishedUnderCount = card.cardsUnder.length;
+  card.atLocation = undefined;
   if (card.cardsUnder.length) {
     p.discard.push(...card.cardsUnder);
     p.discardedThisTurn = (p.discardedThisTurn ?? 0) + card.cardsUnder.length;

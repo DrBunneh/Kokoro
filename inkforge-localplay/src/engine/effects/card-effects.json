@@ -2002,5 +2002,13 @@
   "royalsummons": [{ "trigger": "start_of_turn", "steps": [{ "do": "mayConfirm", "text": "discard a Princess/Queen to return a character from your discard?" }, { "do": "discardChoose", "amount": 1, "text": "discard a card" }, { "do": "returnFromDiscard", "cardType": "character", "keepUpTo": 1, "optional": true, "text": "return a character" }] }],
   "electricmove": [{ "trigger": "on_play", "when": { "playedType": "song" }, "steps": [{ "do": "grantKeyword", "to": "self", "keyword": "Rush", "duration": "end_of_turn" }] }],
 
+  "comeoutandfight": [{ "trigger": "on_play", "steps": [{ "do": "chooseCharacter", "as": "t", "scope": "any", "includeLocations": true, "text": "put all cards under it on the bottom of the deck" }, { "do": "cardsUnderTo", "from": "t", "to": "bottom" }, { "do": "draw", "player": "self", "amount": 1 }] }],
+  "visitingchristmaspast": [{ "trigger": "on_play", "steps": [{ "do": "harvestUnder", "to": "inkwellExerted" }] }],
+  "graveoutcome": [{ "trigger": "on_banish", "steps": [{ "do": "opponentDiscardPerUnder" }] }],
+  "comesee": [{ "trigger": "on_quest", "steps": [{ "do": "lookAtTop", "count": 0, "countFromUnder": true, "keepUpTo": 99, "rest": "bottom", "optional": true, "filter": { "cardType": "character" } }] }],
+  "floodofpower": [{ "trigger": "on_play", "steps": [{ "do": "eachPlayer", "who": "each", "steps": [{ "do": "returnFromDiscard", "keepUpTo": 5, "to": "inkwellExerted", "optional": true, "text": "put up to 5 cards from your discard into your inkwell" }] }] }],
+  "escapeplan": [{ "trigger": "on_play", "when": { "discardedAtLeast": 2 }, "steps": [{ "do": "eachPlayer", "who": "each", "steps": [{ "do": "chooseCharacter", "as": "a", "scope": "ally", "optional": true, "text": "put into your inkwell" }, { "do": "putToInkwell", "to": "a", "exerted": true }, { "do": "chooseCharacter", "as": "b", "scope": "ally", "optional": true, "text": "put into your inkwell" }, { "do": "putToInkwell", "to": "b", "exerted": true }] }] }],
+  "i2i": [{ "trigger": "on_play", "steps": [{ "do": "eachPlayer", "who": "each", "steps": [{ "do": "draw", "player": "self", "amount": 2 }, { "do": "gainLore", "player": "self", "amount": 2 }] }] }],
+
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }
