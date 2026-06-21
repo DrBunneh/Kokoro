@@ -1043,6 +1043,7 @@ export function reduce(
       if (!mover || mover.printed.type !== "character") throw new GameError("Not a character in play");
       if (!location || location.printed.type !== "location") throw new GameError("Not a location in play");
       if (mover.atLocation === location.instanceId) throw new GameError("Already at that location");
+      if (mover.printed.specialAbilities.some((a) => a.slug === "ijustwannastayhome")) throw new GameError("This character can't move to locations");
       const locSlugs = location.printed.specialAbilities.map((a) => a.slug);
       const isToy = mover.printed.subtypes.some((s) => s.toLowerCase() === "toy");
       // Free-move grants: Pizza Planet (your Toys) / Ring of Stones (your exerted).

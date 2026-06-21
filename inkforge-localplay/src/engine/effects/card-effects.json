@@ -2021,6 +2021,15 @@
   "specialsummons": [{ "trigger": "activated", "steps": [{ "do": "playFree", "from": "hand", "cardType": "character", "maxCost": 5, "as": "x", "optional": true, "text": "play a character (cost 5 or less) for free" }, { "do": "grantKeyword", "to": "x", "keyword": "Rush", "duration": "end_of_turn" }, { "do": "markBanishEndOfTurn", "to": "x" }] }],
   "turnintodinosaur": [{ "trigger": "activated", "steps": [{ "do": "chooseCharacter", "as": "b", "scope": "ally", "text": "banish one of your characters" }, { "do": "banish", "to": "b" }, { "do": "playFree", "from": "hand", "cardType": "character", "optional": true, "text": "play a character for free" }] }],
   "metamorphosis": [{ "trigger": "on_play", "steps": [{ "do": "playFree", "from": "discard", "cardType": "character", "optional": true, "text": "play a character from your discard for free" }] }],
+  "nowsmychance": [{ "trigger": "activated", "steps": [{ "do": "discardChoose", "amount": 1, "text": "discard a card" }, { "do": "grantKeyword", "to": "self", "keyword": "Challenger", "value": 3, "duration": "end_of_turn" }] }],
+  "watchclosely": [{ "trigger": "on_play", "steps": [{ "do": "exert", "to": "self" }] }],
+  "grounded": [{ "trigger": "activated", "steps": [{ "do": "returnToHand", "to": "self" }] }],
+  "powersupply": [{ "trigger": "start_of_turn", "steps": [{ "do": "modal", "options": [{ "label": "Discard a card", "steps": [{ "do": "discardChoose", "amount": 1 }] }, { "label": "Banish this item", "steps": [{ "do": "banish", "to": "self" }] }] }] }],
+  "spinningarrow": [{ "trigger": "end_of_turn", "when": { "challengedThisTurn": true }, "steps": [{ "do": "banish", "to": "self" }] }],
+  "yourpath": [{ "trigger": "end_of_turn", "when": { "noCharacterChallengedThisTurn": true }, "steps": [{ "do": "lookAtTop", "count": 1, "keepUpTo": 1, "rest": "bottom", "optional": true, "filter": { "cardType": "character", "maxCost": 3 } }] }],
+  "layoftheland": [{ "trigger": "activated", "when": { "anyBanishedThisTurn": true }, "steps": [{ "do": "gainLore", "player": "self", "amount": 1 }] }],
+  "anotherchance": [{ "trigger": "start_of_turn", "steps": [{ "do": "mayConfirm", "text": "put all cards under this location into your hand and banish it?" }, { "do": "cardsUnderTo", "from": "self", "to": "hand" }, { "do": "banish", "to": "self" }] }],
+  "outofseason": [{ "trigger": "on_other_banished", "oncePerTurn": true, "when": { "banishedMaxCost": 2 }, "steps": [{ "do": "putTopToInkwell", "exerted": true }] }],
 
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

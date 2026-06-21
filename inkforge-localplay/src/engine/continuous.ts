@@ -19,6 +19,8 @@ export interface StaticDef {
   subtype?: string;
   /** Name filter for scope "yoursName" (e.g. "Dale", "Woody"). */
   name?: string;
+  /** Max-cost filter for scope "opponents" (Cruella - Style Icon). */
+  maxCost?: number;
   /** Color filter for scope "yoursColor" (e.g. "amber"). */
   color?: string;
   strength?: number;
@@ -160,7 +162,7 @@ function applies(def: StaticDef, source: CardInstance, srcOwner: PlayerId, targe
     case "yoursName":
       return tgtOwner === srcOwner && target.printed.type === "character" && !!def.name && target.printed.name.toLowerCase() === def.name.toLowerCase();
     case "opponents":
-      return tgtOwner !== srcOwner && target.printed.type === "character";
+      return tgtOwner !== srcOwner && target.printed.type === "character" && (def.maxCost == null || target.printed.cost <= def.maxCost);
     case "here":
       return target.printed.type === "character" && target.atLocation === source.instanceId &&
         (!def.subtype || target.printed.subtypes.some((s) => s.toLowerCase() === def.subtype!.toLowerCase()));
