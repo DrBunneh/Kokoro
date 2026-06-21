@@ -166,6 +166,8 @@ export interface TargetFilter {
   exerted?: boolean;
   /** Target must have damage on it (Buzz — "chosen opposing damaged character"). */
   damaged?: boolean;
+  /** Target must have the Boost keyword (Roo, Lonely Grave — "with Boost"). */
+  hasBoost?: boolean;
 }
 
 /** Restricts which revealed deck cards a scry may keep (e.g. "a song card"). */
@@ -291,6 +293,10 @@ export type Step =
   | { do: "mill"; amount: number; player?: Who }
   // Put the top card of your deck facedown under a bound character (Mickey - Bob Cratchit):
   | { do: "putTopUnder"; to: string }
+  // Put the source card itself facedown under a bound character/location (Roo - Little Helper):
+  | { do: "putSelfUnder"; to: string }
+  // Opponent loses lore equal to a bound character's damage, capped (Nani's Payback):
+  | { do: "loseLoreByDamage"; from: string; max?: number }
   // Put all cards under a bound character into your hand (Alice - Well-Read Whisper):
   | { do: "cardsUnderToHand"; from: string }
   // Move all cards under a bound character/item/location to a zone (Come Out and Fight):
@@ -309,6 +315,8 @@ export type Step =
   | { do: "banishLocations" }
   // Look at the top `count`, put each on the top or bottom of your deck (Dr. Sara Bellum):
   | { do: "scryTopOrBottom"; count: number; text?: string }
+  // Search your deck for a matching card, put it into your hand, then shuffle (Don't Be Nervous):
+  | { do: "searchDeck"; cardType?: CardType; subtype?: string; text?: string }
   // Look at the top `count`, put the chosen one into your inkwell (exerted), rest
   // stay on top in order (Kida - Creative Thinker):
   | { do: "scryToInkwell"; count: number; text?: string }
@@ -442,6 +450,7 @@ export function targetMatches(
     if (f.subtype && !card.printed.subtypes.some((s) => s.toLowerCase() === f.subtype!.toLowerCase())) return false;
     if (f.exerted && !card.exerted) return false;
     if (f.damaged && card.damage <= 0) return false;
+    if (f.hasBoost && !card.printed.abilities.some((a) => a.ability.toLowerCase().startsWith("boost"))) return false;
   }
   return true;
 }
@@ -924,6 +933,26 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
       if (t && top) t.cardsUnder.push(top);
       break;
     }
+    case "putSelfUnder": {
+      const t = resolveTarget(state, ctx, step.to);
+      const loc = findInstance(state, ctx.source.instanceId);
+      if (t && loc && t.instanceId !== ctx.source.instanceId) {
+        const arr = state.players[loc.owner][loc.zone];
+        const i = arr.indexOf(ctx.source);
+        if (i >= 0) arr.splice(i, 1);
+        ctx.source.damage = 0; ctx.source.exerted = false; ctx.source.justPlayed = false; ctx.source.appliedEffects = [];
+        t.cardsUnder.push(ctx.source);
+      }
+      break;
+    }
+    case "loseLoreByDamage": {
+      const t = resolveTarget(state, ctx, step.from);
+      if (t) {
+        const amt = Math.min(t.damage, step.max ?? Infinity);
+        if (amt > 0) { const opp = state.players[otherPlayer(ctx.controller)]; opp.lore = Math.max(0, opp.lore - amt); }
+      }
+      break;
+    }
     case "putTopUnderEachOther": {
       const p = state.players[ctx.controller];
       for (const c of p.field) {
@@ -1245,6 +1274,23 @@ export function runSteps(
       const top = p.deck.slice(0, step.count);
       if (top.length === 0) continue;
       return { steps: steps.slice(i), scope: "any", text: step.text, optional: false, pick: "deck", reveal: top.map((c) => c.instanceId) };
+    }
+    if (step.do === "searchDeck") {
+      const p = state.players[ctx.controller];
+      const matches = (c: CardInstance) => (!step.cardType || c.printed.type === step.cardType) && (!step.subtype || c.printed.subtypes.some((s) => s.toLowerCase() === step.subtype!.toLowerCase()));
+      const shuffle = () => { const rng = new Rng(state.rngSeed, state.rngCursor); p.deck = rng.shuffle(p.deck); state.rngCursor = rng.cursor; };
+      if (pending != null) {
+        if (pending !== "__searchstop__") {
+          const idx = p.deck.findIndex((c) => c.instanceId === pending && matches(c));
+          if (idx >= 0) { const card = p.deck.splice(idx, 1)[0]!; p.hand.push(card); }
+        }
+        shuffle();
+        pending = undefined;
+        continue;
+      }
+      const pool = p.deck.filter(matches);
+      if (pool.length === 0) { shuffle(); continue; }
+      return { steps: steps.slice(i), scope: "any", text: step.text, optional: false, pick: "deck", reveal: pool.map((c) => c.instanceId) };
     }
     if (step.do === "scryTopOrBottom") {
       const p = state.players[ctx.controller];

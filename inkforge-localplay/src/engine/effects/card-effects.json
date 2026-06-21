@@ -2010,5 +2010,11 @@
   "escapeplan": [{ "trigger": "on_play", "when": { "discardedAtLeast": 2 }, "steps": [{ "do": "eachPlayer", "who": "each", "steps": [{ "do": "chooseCharacter", "as": "a", "scope": "ally", "optional": true, "text": "put into your inkwell" }, { "do": "putToInkwell", "to": "a", "exerted": true }, { "do": "chooseCharacter", "as": "b", "scope": "ally", "optional": true, "text": "put into your inkwell" }, { "do": "putToInkwell", "to": "b", "exerted": true }] }] }],
   "i2i": [{ "trigger": "on_play", "steps": [{ "do": "eachPlayer", "who": "each", "steps": [{ "do": "draw", "player": "self", "amount": 2 }, { "do": "gainLore", "player": "self", "amount": 2 }] }] }],
 
+  "hoppingin": [{ "trigger": "activated", "steps": [{ "do": "chooseCharacter", "as": "t", "scope": "ally", "includeLocations": true, "filter": { "hasBoost": true }, "text": "put this character under it" }, { "do": "putSelfUnder", "to": "t" }] }],
+  "hauntingpresence": [{ "trigger": "activated", "steps": [{ "do": "chooseCharacter", "as": "b", "scope": "ally", "text": "banish one of your characters" }, { "do": "banish", "to": "b" }, { "do": "chooseCharacter", "as": "t", "scope": "ally", "includeLocations": true, "filter": { "hasBoost": true }, "text": "put the top card under it" }, { "do": "putTopUnder", "to": "t" }] }],
+  "dontbenervous": [{ "trigger": "on_play", "steps": [{ "do": "searchDeck", "subtype": "Princess", "text": "search for a Princess" }] }],
+  "modernmarvel": [{ "trigger": "on_quest", "steps": [{ "do": "mayConfirm", "text": "put an item on the bottom to play an item from your discard for free?" }, { "do": "returnFromDiscard", "cardType": "item", "keepUpTo": 1, "to": "bottom", "optional": true, "text": "put an item on the bottom" }, { "do": "playFree", "from": "discard", "cardType": "item", "maxCost": 5, "optional": true, "text": "play an item (cost 5 or less) from your discard for free" }] }],
+  "nanispayback": [{ "trigger": "on_play", "steps": [{ "do": "chooseCharacter", "as": "t", "scope": "ally", "text": "opponents lose lore equal to its damage (max 4)" }, { "do": "loseLoreByDamage", "from": "t", "max": 4 }, { "do": "draw", "player": "self", "amount": 1 }] }],
+
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }

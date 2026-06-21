@@ -1279,6 +1279,12 @@ export function reduce(
               const mustKeep = !(lead.optional ?? false) && kept === 0 && legal.length > 0;
               inject = mustKeep ? legal[0]!.instanceId : "__rfdstop__";
             }
+          } else if (lead && lead.do === "searchDeck") {
+            const pd = next.players[prompt.controller].deck;
+            const matches = (c: CardInstance) => (!lead.cardType || c.printed.type === lead.cardType) && (!lead.subtype || c.printed.subtypes.some((s) => s.toLowerCase() === lead.subtype!.toLowerCase()));
+            const legal = pd.filter(matches);
+            if (action.targetInstanceId != null && legal.some((c) => c.instanceId === action.targetInstanceId)) inject = action.targetInstanceId;
+            else inject = legal[0]?.instanceId ?? "__searchstop__";
           } else if (lead && lead.do === "scryTopOrBottom") {
             const pd = next.players[prompt.controller].deck;
             const window = pd.slice(0, lead.count);
