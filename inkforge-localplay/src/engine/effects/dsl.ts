@@ -333,7 +333,9 @@ export type Step =
   // Play ANOTHER card (from hand or discard) into play for free (Lady - Family Dog,
   // Woody - Jungle Guide, Tamatoa). The freely-played card's own on_play does not
   // chain (board state only).
-  | { do: "playFree"; from?: "hand" | "discard"; cardType?: CardType; maxCost?: number; subtype?: string; optional?: boolean; text?: string }
+  | { do: "playFree"; from?: "hand" | "discard"; cardType?: CardType; maxCost?: number; subtype?: string; as?: string; optional?: boolean; text?: string }
+  // Mark a bound character to be banished at the end of this turn (Mystical Inkcaster temp-summon):
+  | { do: "markBanishEndOfTurn"; to: string }
   // Return the source card from your discard to your hand (Will o' the Wisp / Snow White):
   | { do: "returnSelfToHand" }
   | { do: "discard"; player?: Who; amount?: number }
@@ -691,6 +693,11 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     case "protectFromChallenge": {
       const t = resolveTarget(state, ctx, step.to);
       if (t) t.cantBeChallengedUntil = ctx.controller;
+      break;
+    }
+    case "markBanishEndOfTurn": {
+      const t = resolveTarget(state, ctx, step.to);
+      if (t) t.banishAtEndOfTurn = true;
       break;
     }
     case "putToInkwell": {
@@ -1265,6 +1272,7 @@ export function runSteps(
             card.damage = 0; card.appliedEffects = [];
             if (card.printed.type === "item") { card.justPlayed = false; card.exerted = false; p.items.push(card); }
             else { card.justPlayed = true; card.exerted = false; p.field.push(card); }
+            if (step.as) ctx.vars[step.as] = card.instanceId;
             logs.push(makeLog({ turnNumber: state.turnNumber, player: ctx.controller, type: "CARD_PLAYED", message: `Played ${card.printed.fullName} for free`, cardRefs: [{ id: card.printed.id, name: card.printed.fullName }] }));
           }
         }

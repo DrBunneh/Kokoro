@@ -59,6 +59,8 @@ export interface CardInstance {
   cantReadyNextTurn?: boolean;
   /** Can't be challenged until the caster's next turn (Mother Will Protect You). */
   cantBeChallengedUntil?: PlayerId;
+  /** Banish this card at the end of the current turn (Mystical Inkcaster temp-summon). */
+  banishAtEndOfTurn?: boolean;
 }
 
 /** A turn-scoped "pay N less for the next matching play" discount. */

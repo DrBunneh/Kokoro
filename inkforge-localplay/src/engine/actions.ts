@@ -1419,6 +1419,14 @@ export function reduce(
       }
       // "Can't challenge during their next turn" clears at the end of that turn.
       for (const c of next.players[ending].field) c.cantChallengeNextTurn = false;
+      // Temp-summoned characters (Mystical Inkcaster) are banished at end of turn.
+      for (const pid of [1, 2] as PlayerId[]) {
+        for (const c of next.players[pid].field.filter((x) => x.banishAtEndOfTurn)) {
+          banishCard(next.players[pid], c, logs, next.turnNumber);
+          banished.push({ card: c, owner: pid });
+        }
+      }
+      drainBanish(next, banished, logs, effects);
       // Freshly-inked cards flip to face-down at the end of the turn they were played.
       for (const c of next.players[ending].inkwell) c.justPlayed = false;
       // "Pay N less this turn" discounts expire at end of turn.
