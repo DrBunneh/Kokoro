@@ -168,6 +168,8 @@ export interface TargetFilter {
   damaged?: boolean;
   /** Target must have the Boost keyword (Roo, Lonely Grave — "with Boost"). */
   hasBoost?: boolean;
+  /** Target must be a location (Touch the Sky). */
+  onlyLocations?: boolean;
 }
 
 /** Restricts which revealed deck cards a scry may keep (e.g. "a song card"). */
@@ -272,8 +274,12 @@ export type Step =
   | { do: "returnFromDiscard"; cardType?: CardType; maxCost?: number; minWillpower?: number; cardName?: string; subtype?: string; keepUpTo?: number; to?: "hand" | "bottom" | "inkwellExerted" | "top"; optional?: boolean; text?: string }
   // Shuffle all character cards from discard(s) back into deck(s) (DunBroch Tapestry):
   | { do: "shuffleDiscardIntoDeck"; player?: Who | "each"; cardType?: CardType }
-  // Draw cards equal to a bound character's strength (Scar - Finally King):
-  | { do: "drawByStat"; from: string; stat: "strength" | "willpower" }
+  // Draw cards equal to a bound character's stat (Scar — strength; Touch the Sky — location lore):
+  | { do: "drawByStat"; from: string; stat: "strength" | "willpower" | "lore" }
+  // Move a bound character to a bound location (Touch the Sky):
+  | { do: "moveBoundToLocation"; char: string; location: string }
+  // Protect every one of your characters from being challenged until your next turn (Pocahontas - Peacekeeper):
+  | { do: "protectAllFromChallenge"; scope?: Scope }
   // The player whose turn is ending discards down to `size` cards (Goliath):
   | { do: "discardToHandSize"; size: number }
   // Discard your whole hand, then draw `draw` cards (Doc / A Whole New World):
@@ -451,6 +457,7 @@ export function targetMatches(
     if (f.exerted && !card.exerted) return false;
     if (f.damaged && card.damage <= 0) return false;
     if (f.hasBoost && !card.printed.abilities.some((a) => a.ability.toLowerCase().startsWith("boost"))) return false;
+    if (f.onlyLocations && card.printed.type !== "location") return false;
   }
   return true;
 }
@@ -896,9 +903,19 @@ function applyStep(state: GameState, step: Step, ctx: EffectContext, logs: LogEn
     case "drawByStat": {
       const t = resolveTarget(state, ctx, step.from);
       if (t) {
-        const n = step.stat === "willpower" ? effectiveWillpower(state, t) : effectiveStrength(state, t);
+        const n = step.stat === "willpower" ? effectiveWillpower(state, t) : step.stat === "lore" ? effectiveLore(state, t) : effectiveStrength(state, t);
         if (n > 0) { drawCards(state.players[ctx.controller], n); for (let k = 0; k < n; k++) ctx.events?.onDraw?.(ctx.controller); }
       }
+      break;
+    }
+    case "moveBoundToLocation": {
+      const ch = resolveTarget(state, ctx, step.char);
+      const loc = resolveTarget(state, ctx, step.location);
+      if (ch && loc && loc.printed.type === "location") ch.atLocation = loc.instanceId;
+      break;
+    }
+    case "protectAllFromChallenge": {
+      for (const c of charsInScope(state, ctx.controller, step.scope ?? "ally")) c.cantBeChallengedUntil = ctx.controller;
       break;
     }
     case "discardToHandSize": {
