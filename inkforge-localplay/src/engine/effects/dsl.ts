@@ -170,6 +170,8 @@ export interface TargetFilter {
   hasBoost?: boolean;
   /** Target must be a location (Touch the Sky). */
   onlyLocations?: boolean;
+  /** Target must have this keyword (Wipe Out — Bodyguard). */
+  hasKeyword?: string;
 }
 
 /** Restricts which revealed deck cards a scry may keep (e.g. "a song card"). */
@@ -460,6 +462,10 @@ export function targetMatches(
     if (f.damaged && card.damage <= 0) return false;
     if (f.hasBoost && !card.printed.abilities.some((a) => a.ability.toLowerCase().startsWith("boost"))) return false;
     if (f.onlyLocations && card.printed.type !== "location") return false;
+    if (f.hasKeyword) {
+      const want = f.hasKeyword.toLowerCase();
+      if (!(card.printed.abilities.some((a) => a.ability.toLowerCase().startsWith(want)) || card.appliedEffects.some((e) => e.keyword?.toLowerCase() === want))) return false;
+    }
   }
   return true;
 }

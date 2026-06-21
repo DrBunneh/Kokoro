@@ -2030,6 +2030,7 @@
   "layoftheland": [{ "trigger": "activated", "when": { "anyBanishedThisTurn": true }, "steps": [{ "do": "gainLore", "player": "self", "amount": 1 }] }],
   "anotherchance": [{ "trigger": "start_of_turn", "steps": [{ "do": "mayConfirm", "text": "put all cards under this location into your hand and banish it?" }, { "do": "cardsUnderTo", "from": "self", "to": "hand" }, { "do": "banish", "to": "self" }] }],
   "outofseason": [{ "trigger": "on_other_banished", "oncePerTurn": true, "when": { "banishedMaxCost": 2 }, "steps": [{ "do": "putTopToInkwell", "exerted": true }] }],
+  "wipeout": [{ "trigger": "on_play", "steps": [{ "do": "modal", "options": [{ "label": "A Bodyguard character to inkwell", "steps": [{ "do": "chooseCharacter", "as": "t", "scope": "any", "filter": { "hasKeyword": "Bodyguard" }, "text": "put into inkwell exerted" }, { "do": "putToInkwell", "to": "t", "exerted": true }] }, { "label": "An item to inkwell", "steps": [{ "do": "chooseItem", "as": "i", "scope": "any", "text": "put into inkwell exerted" }, { "do": "putToInkwell", "to": "i", "exerted": true }] }] }] }],
 
   "$schema": "slug -> EffectDef[] (composable steps). slugs use build-card-db slugify."
 }
